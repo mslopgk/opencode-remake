@@ -52,4 +52,20 @@ for d in "$REPO"/camp-preset/skills/*/; do
   fi
 done
 
+# AGENTS.md 필수 항목
+AG="$REPO/camp-preset/AGENTS.md"
+assert_file "$AG" "AGENTS.md 존재"
+BODY="$(cat "$AG" 2>/dev/null || echo '')"
+assert_contains "$BODY" "디자인씽킹" "AGENTS.md 에 캠프 주제"
+assert_contains "$BODY" "AI·디지털" "AGENTS.md 에 트랙1"
+assert_contains "$BODY" "지구·환경" "AGENTS.md 에 트랙2"
+assert_contains "$BODY" "한 번에 한 가지만" "AGENTS.md 에 질문 규칙"
+assert_contains "$BODY" "이름을 묻지 않습니다" "AGENTS.md 에 개인정보 규칙"
+assert_contains "$BODY" "우리팀.md" "AGENTS.md 에 팀 기록 파일 규칙"
+assert_contains "$BODY" "9월 19일" "AGENTS.md 에 캠프 일정"
+# AGENTS.md 는 지시문이므로 금지 용어를 "목록으로" 담아야 한다.
+# (학생 대면 텍스트가 아니므로 금지어가 등장하는 것이 정상)
+assert_contains "$BODY" "전문용어를 쓰지 않습니다" "AGENTS.md 에 금지 용어 규칙"
+assert_contains "$BODY" "터미널, 커맨드" "AGENTS.md 에 금지 용어 목록"
+
 summary
