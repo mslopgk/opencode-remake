@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko" data-theme="ocean">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>우리 캠페인</title>
+<style>
+  :root{
+    --bg:#0b2545; --fg:#ffffff; --accent:#5bc0eb; --sub:#a8dadc;
+    --font:"맑은 고딕","Malgun Gothic",sans-serif;
+  }
+  [data-theme="ocean"] { --bg:#0b2545; --fg:#ffffff; --accent:#5bc0eb; --sub:#a8dadc; }
+  [data-theme="forest"]{ --bg:#14281d; --fg:#f4fff8; --accent:#7cb518; --sub:#c3e8bd; }
+  [data-theme="sunset"]{ --bg:#3d1e2e; --fg:#fff5e1; --accent:#ff8c42; --sub:#ffd9a0; }
+  [data-theme="night"] { --bg:#12121c; --fg:#f0f0ff; --accent:#9b8cff; --sub:#c9c4e8; }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font-family:var(--font);overflow:hidden}
+  .slide{
+    position:absolute;inset:0;display:none;
+    flex-direction:column;justify-content:center;align-items:center;
+    text-align:center;padding:6vh 8vw;gap:2.4vh;
+  }
+  .slide.on{display:flex}
+  h1{font-size:7vh;line-height:1.2;color:var(--accent)}
+  h2{font-size:5vh;line-height:1.25;color:var(--accent)}
+  p,li{font-size:3.4vh;line-height:1.5;color:var(--fg)}
+  ul{text-align:left;max-width:80%}
+  li{margin:1vh 0}
+  .team{font-size:3vh;color:var(--sub)}
+  .media{max-width:70%;max-height:52vh;border-radius:1.6vh}
+  .hint{position:fixed;right:2vw;bottom:2vh;font-size:1.8vh;color:var(--sub);opacity:.7}
+  .page{position:fixed;left:2vw;bottom:2vh;font-size:1.8vh;color:var(--sub);opacity:.7}
+</style>
+</head>
+<body>
+
+<!-- 1. 표지 -->
+<section class="slide on">
+  <h1>캠페인 이름을 여기에</h1>
+  <p class="team">00조 팀이름</p>
+</section>
+
+<!-- 2. 우리가 찾은 문제 -->
+<section class="slide">
+  <h2>우리가 찾은 문제</h2>
+  <p>어떤 문제를 보고 안타까웠는지 적어요.</p>
+</section>
+
+<!-- 3. 우리의 질문 -->
+<section class="slide">
+  <h2>우리의 질문</h2>
+  <p>우리가 어떻게 하면 ○○할 수 있을까?</p>
+</section>
+
+<!-- 4. 우리의 캠페인 -->
+<section class="slide">
+  <h2>우리의 캠페인</h2>
+  <ul>
+    <li>무엇을 하는 캠페인인지</li>
+    <li>누구에게 알리고 싶은지</li>
+  </ul>
+</section>
+
+<!-- 5. 우리가 만든 것 -->
+<section class="slide">
+  <h2>우리가 만든 것</h2>
+  <p>여기에 우리가 만든 그림이 들어갑니다.</p>
+</section>
+
+<!-- 6. 이렇게 실천해요 -->
+<section class="slide">
+  <h2>이렇게 실천해요</h2>
+  <ul>
+    <li>오늘부터 할 수 있는 일</li>
+    <li>친구들과 함께 할 수 있는 일</li>
+  </ul>
+</section>
+
+<!-- 7. 우리 팀 -->
+<section class="slide">
+  <h2>우리 팀</h2>
+  <p class="team">00조 팀이름</p>
+  <p>들어 주셔서 고맙습니다!</p>
+</section>
+
+<div class="page"><span id="now">1</span> / <span id="all">7</span></div>
+<div class="hint">← → 눌러서 넘기기</div>
+
+<script>
+(function(){
+  var slides = document.querySelectorAll('.slide');
+  var i = 0;
+  document.getElementById('all').textContent = slides.length;
+  function show(n){
+    if (n < 0) n = 0;
+    if (n > slides.length - 1) n = slides.length - 1;
+    slides[i].classList.remove('on');
+    i = n;
+    slides[i].classList.add('on');
+    document.getElementById('now').textContent = i + 1;
+  }
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { show(i+1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'PageUp')                   { show(i-1); }
+    if (e.key === 'Home') { show(0); }
+    if (e.key === 'End')  { show(slides.length-1); }
+  });
+  document.addEventListener('click', function(e){
+    show(e.clientX < window.innerWidth/3 ? i-1 : i+1);
+  });
+})();
+</script>
+</body>
+</html>

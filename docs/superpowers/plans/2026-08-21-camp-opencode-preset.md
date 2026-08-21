@@ -300,7 +300,10 @@ assert_contains "$BODY" "한 번에 한 가지만" "AGENTS.md 에 질문 규칙"
 assert_contains "$BODY" "이름을 묻지 않습니다" "AGENTS.md 에 개인정보 규칙"
 assert_contains "$BODY" "우리팀.md" "AGENTS.md 에 팀 기록 파일 규칙"
 assert_contains "$BODY" "9월 19일" "AGENTS.md 에 캠프 일정"
-assert_not_contains "$BODY" "터미널" "AGENTS.md 가 학생에게 터미널 용어를 쓰지 않음"
+# AGENTS.md 는 지시문이므로 금지 용어를 "목록으로" 담아야 한다.
+# (학생 대면 텍스트가 아니므로 금지어가 등장하는 것이 정상)
+assert_contains "$BODY" "전문용어를 쓰지 않습니다" "AGENTS.md 에 금지 용어 규칙"
+assert_contains "$BODY" "터미널, 커맨드" "AGENTS.md 에 금지 용어 목록"
 ```
 
 - [ ] **Step 2: 테스트를 실행해 실패를 확인**
@@ -1382,7 +1385,9 @@ W="$(cat "$REPO/camp-preset/skills/web-slides/SKILL.md" 2>/dev/null || echo '')"
 assert_contains "$W" 'class="slide"' "web-slides 가 slide 클래스를 명시"
 assert_contains "$W" "data-theme" "web-slides 가 테마 전환 방법을 명시"
 assert_contains "$W" "ocean" "web-slides 가 테마 이름을 명시"
-assert_not_contains "$W" "npm" "web-slides 가 빌드 도구를 언급하지 않음"
+# 스킬은 지시문이므로 빌드 도구를 "금지 조항으로" 담아야 한다
+assert_contains "$W" "빌드 도구를 쓰지 않는다" "web-slides 가 빌드 도구를 금지"
+assert_contains "$W" "외부 URL" "web-slides 가 외부 리소스를 금지"
 
 # campaign-planning 은 HMW 절차를 담아야 한다
 C="$(cat "$REPO/camp-preset/skills/campaign-planning/SKILL.md" 2>/dev/null || echo '')"
