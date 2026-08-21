@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# mock higgsfield. 호출 인자를 기록하고 가짜 결과 URL 을 출력한다.
+# MOCK_LOG 에 인자를 append 한다. MOCK_FAIL=1 이면 실패를 흉내낸다.
+printf '%s\n' "$*" >> "${MOCK_LOG:-/dev/null}"
+if [ "${MOCK_FAIL:-0}" = "1" ]; then
+  echo "mock failure" >&2
+  exit 1
+fi
+case "$1 $2" in
+  "generate create")
+    echo "https://mock.example/out.png"
+    ;;
+  "account status")
+    echo "mock@example.com — plus plan, 999 credits"
+    ;;
+  *)
+    echo "mock: unhandled: $*" >&2; exit 1 ;;
+esac
