@@ -23,6 +23,11 @@
 - **파일 쓰기는 인코딩을 명시한다.** `Set-Content`/`Add-Content` 는 기본이 ANSI 이므로
   한국어가 깨진다. 반드시 `-Encoding utf8`
 - **`.cmd` 진입점에는 `chcp 65001` 을 넣는다.** 콘솔이 UTF-8 이 아니면 한국어가 깨진다
+- **학생에게 써 주는 파일은 UTF-8 "BOM 없음" 이어야 한다.** (구현 중 실제로 겪음)
+  `.ps1` 소스는 BOM 이 필요한데 학생 파일은 정반대다. `Set-Content -Encoding utf8` 은
+  5.1 에서 BOM 을 붙이므로 학생 파일에 쓰면 안 된다 — HTML 앞의 BOM 은 렌더링
+  문제를 일으키고 `new-team.sh` 판과 바이트가 달라진다.
+  `Write-Utf8NoBom` 헬퍼(`lib-team.ps1`)를 쓴다
 - **네이티브 exe 에 `2>&1` 을 붙이지 않는다.** 5.1 에서 NativeCommandError 로 감싸져
   exit 0 인데도 `$?` 가 `$false` 가 된다
 - **전 구성요소 per-user 설치.** 관리자 권한을 요구하면 실패로 간주한다
