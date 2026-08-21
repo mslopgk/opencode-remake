@@ -16,8 +16,13 @@
 - **Windows PowerShell 5.1 전용.** `pwsh` 는 학생 노트북에 없다. 삼항연산자(`? :`),
   `??`, `?.`, `ConvertFrom-Json -AsHashtable` 을 쓰지 않는다. `if/else` 와
   명시적 `$null -eq` 비교를 쓴다
+- **`.ps1` 소스 파일은 UTF-8 BOM 으로 저장한다.** (구현 중 실제로 겪음)
+  Windows PowerShell 5.1 은 BOM 이 없는 `.ps1` 을 ANSI 로 읽어서 **스크립트 안의
+  한국어 문자열이 통째로 깨진다.** 출력 인코딩을 맞추는 것만으로는 해결되지 않는다.
+  `tests/test-encoding.ps1` 이 이를 회귀 검사한다
 - **파일 쓰기는 인코딩을 명시한다.** `Set-Content`/`Add-Content` 는 기본이 ANSI 이므로
   한국어가 깨진다. 반드시 `-Encoding utf8`
+- **`.cmd` 진입점에는 `chcp 65001` 을 넣는다.** 콘솔이 UTF-8 이 아니면 한국어가 깨진다
 - **네이티브 exe 에 `2>&1` 을 붙이지 않는다.** 5.1 에서 NativeCommandError 로 감싸져
   exit 0 인데도 `$?` 가 `$false` 가 된다
 - **전 구성요소 per-user 설치.** 관리자 권한을 요구하면 실패로 간주한다
@@ -75,6 +80,7 @@ tests/
 - Create: `dist/scripts/lib-log.ps1`
 - Create: `tests/run-all.ps1`
 - Create: `tests/test-log.ps1`
+- Create: `tests/test-encoding.ps1`
 - Modify: `.gitignore` (신규 생성)
 
 **Interfaces:**
