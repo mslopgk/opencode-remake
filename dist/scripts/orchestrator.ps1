@@ -30,6 +30,41 @@ function Unblock-BundleFiles([string]$DistDir) {
         ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
 }
 
+# 이미 설치돼 있으면 건너뛴다.
+#
+# 두 가지 이유로 필요하다:
+#  1) 학생 노트북에 이미 Node 나 Git 이 있으면 다시 깔 이유가 없다 (설치 시간 단축)
+#  2) 이미 쓰던 버전을 우리가 덮어써서 학생·개발자 환경을 망치지 않는다
+function Test-ComponentInstalled([string]$Kind, [string]$File) {
+    if ($env:CAMP_FORCE_INSTALL_ALL -eq '1') { return $false }
+
+    if ($File -eq 'node-lts-x64.msi') {
+        return ($null -ne (Get-Command 'node.exe' -CommandType Application -ErrorAction SilentlyContinue))
+    }
+    if ($File -eq 'python-3.12-amd64.exe') {
+        return ($null -ne (Get-Command 'python.exe' -CommandType Application -ErrorAction SilentlyContinue))
+    }
+    if ($File -eq 'Git-64-bit.exe') {
+        return ($null -ne (Get-Command 'git.exe' -CommandType Application -ErrorAction SilentlyContinue))
+    }
+    if ($Kind -eq 'font') {
+        $key = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+        if (-not (Test-Path $key)) { return $false }
+        $props = (Get-ItemProperty -Path $key).PSObject.Properties.Name
+        foreach ($n in $props) { if ($n -like '*Cascadia*') { return $true } }
+        return $false
+    }
+    if ($File -eq 'opencode-desktop-win-x64.exe') {
+        $exe = Join-Path $env:LOCALAPPDATA 'Programs\@opencode-aidesktop\OpenCode.exe'
+        return (Test-Path -LiteralPath $exe -PathType Leaf)
+    }
+    if ($Kind -eq 'clizip') {
+        $exe = Join-Path $env:LOCALAPPDATA 'Programs\opencode-cli\opencode.exe'
+        return (Test-Path -LiteralPath $exe -PathType Leaf)
+    }
+    return $false
+}
+
 function Get-InstallPlan([string]$BundleDir) {
     $candidates = @(
         @{ Name = '노드 (AI 도구가 쓰는 부품)'; File = 'node-lts-x64.msi';            Kind = 'msi';    Args = @('/qn', 'ALLUSERS=0') },
@@ -45,6 +80,7 @@ function Get-InstallPlan([string]$BundleDir) {
         $path = Join-Path $BundleDir $c.File
         if (Test-Path -LiteralPath $path -PathType Leaf) {
             $c['Path'] = $path
+            $c['AlreadyInstalled'] = (Test-ComponentInstalled -Kind $c.Kind -File $c.File)
             $plan += $c
         }
     }
@@ -156,6 +192,10 @@ function Invoke-Install {
     $i = 0
     foreach ($step in $plan) {
         $i++
+        if ($step.AlreadyInstalled) {
+            Write-Ok ("$i/$($plan.Count) " + $step.Name + ' 은(는) 이미 있어요. 넘어갈게요')
+            continue
+        }
         Write-Step ("$i/$($plan.Count) " + $step.Name + ' 을(를) 설치하고 있어요')
         if ($DryRun) {
             Write-Note ('  (연습) ' + $step.File + ' ' + ($step.Args -join ' '))

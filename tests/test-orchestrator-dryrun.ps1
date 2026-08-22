@@ -62,6 +62,22 @@ try {
     foreach ($s in $plan2) { $names2 += $s.Name }
     Assert-NotContains ($names2 -join '|') '노드' '없는 번들 파일은 계획에서 빠짐'
 
+    # --- 이미 설치된 구성요소는 건너뛴다 (멱등성) ---
+    # 앞 단계에서 지운 node msi 를 되살린다
+    'fake' | Set-Content -LiteralPath (Join-Path $bundle 'node-lts-x64.msi') -Encoding utf8
+    $planNow = @(Get-InstallPlan -BundleDir $bundle)
+    $nodeStep = $planNow | Where-Object { $_.File -eq 'node-lts-x64.msi' } | Select-Object -First 1
+    Assert-True ($null -ne $nodeStep) '계획에 노드 단계가 있음'
+    Assert-True ($null -ne $nodeStep.AlreadyInstalled) 'AlreadyInstalled 플래그가 채워짐'
+
+    # 강제 설치 모드에서는 건너뛰지 않는다
+    $env:CAMP_FORCE_INSTALL_ALL = '1'
+    $planForce = @(Get-InstallPlan -BundleDir $bundle)
+    foreach ($s in $planForce) {
+        Assert-Eq $s.AlreadyInstalled $false ('강제 모드에서는 재설치: ' + $s.File)
+    }
+    Remove-Item Env:\CAMP_FORCE_INSTALL_ALL -ErrorAction SilentlyContinue
+
     # --- 사전 점검 ---
     $pre = Test-Prerequisites
     Assert-True ($null -ne $pre.Ok) '사전 점검이 결과를 반환'

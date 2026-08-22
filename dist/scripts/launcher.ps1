@@ -62,17 +62,36 @@ function Invoke-Launcher {
     return $result
 }
 
-function Start-CampLauncher([string]$TemplateDir) {
+function Start-CampLauncher {
+    param(
+        [string]$TemplateDir,
+        # 멘토가 미리 팀 폴더를 만들거나 자동화할 때 쓴다.
+        # 비어 있으면 학생에게 직접 묻는다.
+        [string]$Number = '',
+        [string]$Name = ''
+    )
+
     $parent = Join-Path $env:USERPROFILE '창의디자인캠프'
     Start-CampLog (Join-Path $parent '시작기록.txt')
 
     Write-Step '창의디자인캠프를 시작합니다!'
     Write-Host ''
-    $numText = Read-Host '우리는 몇 조예요? (1~15 숫자만)'
-    $teamName = Read-Host '우리 팀 이름은 뭐예요?'
+    if ($Number -and $Name) {
+        $numText = $Number
+        $teamName = $Name
+    }
+    else {
+        $numText = Read-Host '우리는 몇 조예요? (1~15 숫자만)'
+        $teamName = Read-Host '우리 팀 이름은 뭐예요?'
+    }
+
+    # 학생이 공백을 섞어 넣을 수 있고, 파이프로 들어온 입력에는 BOM 이 붙을 수도 있다.
+    # 숫자만 남기고 다듬는다.
+    if ($null -ne $numText) { $numText = ($numText -replace '[^0-9]', '') }
+    if ($null -ne $teamName) { $teamName = $teamName.Trim() }
 
     $num = 0
-    if (-not [int]::TryParse($numText, [ref]$num)) {
+    if ([string]::IsNullOrWhiteSpace($numText) -or -not [int]::TryParse($numText, [ref]$num)) {
         Write-Fail '조 번호는 숫자로 써 주세요.'
         Stop-CampLog
         return 1
