@@ -11,10 +11,11 @@ try {
     $p = Test-PresetLoaded -Port 4321
     Assert-True $p.Ok '가짜 모드: 프리셋 통과'
     Assert-Eq $p.Agents 4 '가짜 모드: 에이전트 4'
-    Assert-Eq $p.Commands 10 '가짜 모드: 명령어 10'
+    Assert-Eq $p.Commands 11 '가짜 모드: 명령어 11'
     Assert-True (Test-DeepSeek) '가짜 모드: DeepSeek 통과'
     $h = Test-Higgsfield
     Assert-True $h.Ok '가짜 모드: Higgsfield 통과'
+    Assert-True (Test-CampTools).Ok '가짜 모드: 만들기 도구 통과'
 }
 finally { Remove-Item Env:\CAMP_SELFCHECK_FAKE -ErrorAction SilentlyContinue }
 
@@ -25,6 +26,7 @@ try {
     Assert-Eq (Test-PresetLoaded -Port 4321).Ok $false '가짜 모드: 프리셋 실패'
     Assert-Eq (Test-DeepSeek) $false '가짜 모드: DeepSeek 실패'
     Assert-Eq (Test-Higgsfield).Ok $false '가짜 모드: Higgsfield 실패'
+    Assert-Eq (Test-CampTools).Ok $false '가짜 모드: 만들기 도구 실패'
 }
 finally { Remove-Item Env:\CAMP_SELFCHECK_FAKE -ErrorAction SilentlyContinue }
 
@@ -68,5 +70,10 @@ $scSrc = Get-Content -LiteralPath (Join-Path $Repo 'dist\scripts\selfcheck.ps1')
 Assert-NotContains $scSrc 'Invoke-RestMethod -Uri' 'selfcheck 가 Invoke-RestMethod 를 호출하지 않음'
 Assert-Contains $scSrc 'Get-JsonUtf8' 'selfcheck 가 UTF-8 디코딩 헬퍼를 씀'
 Assert-Contains $scSrc '[System.Text.Encoding]::UTF8' '명시적 UTF-8 인코딩 설정'
+
+# 도구 점검이 실제로 존재해야 한다 (이 점검이 없어서 배포 누락을 놓쳤다)
+Assert-Contains $scSrc 'function Test-CampTools' '도구 점검 함수 존재'
+Assert-Contains $scSrc 'camp-media.sh' '도구 점검이 camp-media.sh 를 확인'
+Assert-Contains $scSrc 'merge-slides.sh' '도구 점검이 merge-slides.sh 를 확인'
 
 if (Test-Summary) { exit 0 } else { exit 1 }

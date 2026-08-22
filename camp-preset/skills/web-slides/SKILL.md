@@ -26,7 +26,8 @@ description: 발표자료 index.html 의 구조와 편집 규칙. 슬라이드�
   만들고 고친다
 - 그 파일에는 `<section class="slide">` 만 넣는다. `<html>`·`<head>`·`<style>` 은
   넣지 않는다 (`index.html` 의 것을 그대로 물려받는다)
-- `index.html` 을 직접 고치는 것은 **팀장이 `/합쳐줘` 를 쓸 때만** 이다
+- 합치기는 `$LOCALAPPDATA/Programs/camp-tools/merge-slides.sh` 가 한다. **직접 `index.html` 을 편집해 합치지 마라**
+  (느리고 결과가 들쭉날쭉하다 — 실측으로 확인했다)
 - 그림·음악·영상은 `assets/` 에 그대로 두고 상대경로로 참조한다.
   파일명은 래퍼가 번호를 붙이므로 겹치지 않는다
 

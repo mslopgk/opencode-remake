@@ -9,9 +9,14 @@ description: 캠프에서 그림·음악·영상을 만드는 방법. camp-media
 
 `higgsfield` 명령을 직접 실행하지 않는다. 그러면 비용 제한이 걸리지 않는다.
 
+**경로를 그대로 쓴다. PATH 에서 찾지 마라 — 없다.**
+
 ```bash
-camp-media.sh --kind <그림|대표|음악|영상> --prompt <영어 설명> --team-dir <팀폴더>
+"$LOCALAPPDATA/Programs/camp-tools/camp-media.sh" --kind <그림|대표|음악|영상> --prompt <영어 설명> --team-dir <팀폴더>
 ```
+
+명령을 찾지 못하면 `find` 로 디스크를 뒤지지 마라. 학생에게
+"그림 만들기 도구가 없어요. 선생님을 불러 주세요." 라고 말하고 끝낸다.
 
 성공하면 저장된 파일의 상대경로가 한 줄 출력된다. 예: `assets/그림-1.png`
 

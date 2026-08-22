@@ -51,7 +51,12 @@ function Test-ComponentInstalled([string]$Kind, [string]$File) {
         $key = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
         if (-not (Test-Path $key)) { return $false }
         $props = (Get-ItemProperty -Path $key).PSObject.Properties.Name
-        foreach ($n in $props) { if ($n -like '*Cascadia*') { return $true } }
+        # 실측 함정: Nerd Font 는 Cascadia 를 "CaskaydiaCove" 로 이름을 바꾼다.
+        # Cascadia 만 찾으면 이미 설치된 것을 못 알아보고 재설치하다가
+        # "파일이 사용 중" 오류가 난다.
+        foreach ($n in $props) {
+            if ($n -like '*Caskaydia*' -or $n -like '*Cascadia*') { return $true }
+        }
         return $false
     }
     if ($File -eq 'opencode-desktop-win-x64.exe') {
@@ -107,8 +112,20 @@ function Install-Font([string]$ZipPath) {
         if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
         Get-ChildItem -LiteralPath $tmp -Recurse -Include '*.ttf', '*.otf' -File | ForEach-Object {
             $dest = Join-Path $fontDir $_.Name
-            Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
-            Set-ItemProperty -Path $key -Name $_.BaseName -Value $dest
+            # 이미 설치돼 쓰이는 중인 글꼴 파일은 덮어쓸 수 없다.
+            # 그건 실패가 아니라 "이미 있음" 이므로 넘어간다.
+            if (Test-Path -LiteralPath $dest -PathType Leaf) {
+                Set-ItemProperty -Path $key -Name $_.BaseName -Value $dest
+                return
+            }
+            try {
+                Copy-Item -LiteralPath $_.FullName -Destination $dest -Force -ErrorAction Stop
+                Set-ItemProperty -Path $key -Name $_.BaseName -Value $dest
+            }
+            catch {
+                # 한 글꼴이 실패해도 나머지는 계속 넣는다. 글꼴은 필수가 아니다
+                # (학생은 GUI 를 쓰고, 글꼴은 터미널 글리프에만 영향).
+            }
         }
     }
     finally {
@@ -134,6 +151,43 @@ function Install-OpencodeCli([string]$ZipPath) {
     finally {
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     }
+}
+
+# 에이전트가 실행하는 도구를 설치하고 사용자 PATH 에 등록한다.
+#
+# 이게 없으면 /포스터·/음악·/영상·/합쳐줘 가 전부 실패한다.
+# 개발 중에는 테스트가 PATH 를 직접 넣어줘서 문제가 안 보였다 — 실제로 겪은 함정.
+function Install-CampTools([string]$DistDir) {
+    $src = Join-Path $DistDir 'tools'
+    if (-not (Test-Path -LiteralPath $src -PathType Container)) { return $false }
+
+    $dst = Join-Path $env:LOCALAPPDATA 'Programs\camp-tools'
+    if (-not (Test-Path -LiteralPath $dst)) {
+        New-Item -ItemType Directory -Path $dst -Force | Out-Null
+    }
+    Copy-Item -Path (Join-Path $src '*') -Destination $dst -Force
+
+    # 사용자 PATH 에 추가 (per-user, 관리자 권한 불필요).
+    # setx 는 값을 자르거나 확장해버릴 수 있으므로 레지스트리를 직접 쓴다.
+    $key = 'HKCU:\Environment'
+    $current = ''
+    try {
+        $current = [string](Get-ItemProperty -Path $key -Name 'Path' -ErrorAction Stop).Path
+    } catch { $current = '' }
+
+    $parts = @()
+    if ($current) { $parts = @($current -split ';' | Where-Object { $_ -ne '' }) }
+    if ($parts -notcontains $dst) {
+        $newPath = (@($parts) + @($dst)) -join ';'
+        Set-ItemProperty -Path $key -Name 'Path' -Value $newPath
+    }
+
+    # 이번 프로세스에서도 바로 쓰이도록 넣어준다 (앱은 다음 실행 때 상속)
+    if (($env:PATH -split ';') -notcontains $dst) {
+        $env:PATH = $env:PATH + ';' + $dst
+    }
+
+    return (Test-Path -LiteralPath (Join-Path $dst 'camp-media.sh') -PathType Leaf)
 }
 
 function Copy-PresetAndSecrets([string]$DistDir) {
@@ -221,6 +275,15 @@ function Invoke-Install {
         }
         Write-Ok ($step.Name + ' 을(를) 설치했어요')
     }
+
+    Write-Step '만들기 도구를 넣고 있어요'
+    if (-not $DryRun) {
+        if (-not (Install-CampTools -DistDir $DistDir)) {
+            Write-Fail '만들기 도구를 넣지 못했어요. 이게 없으면 그림을 만들 수 없어요.'
+            return 1
+        }
+    }
+    Write-Ok '만들기 도구를 넣었어요'
 
     Write-Step '캠프 설정을 넣고 있어요'
     if (-not $DryRun) { Copy-PresetAndSecrets -DistDir $DistDir }

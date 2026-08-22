@@ -9,6 +9,21 @@ function Invoke-BuildDist([string]$RepoDir) {
         @{ Src = (Join-Path $RepoDir 'template');    Dst = (Join-Path $RepoDir 'dist\template') }
     )
 
+    # 에이전트가 실행하는 도구들. 이게 학생 노트북에 없으면
+    # /포스터·/음악·/영상·/합쳐줘 가 전부 실패한다 (실제로 겪음).
+    $toolNames = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py')
+    $toolDst = Join-Path $RepoDir 'dist\tools'
+    if (Test-Path -LiteralPath $toolDst) { Remove-Item -Recurse -Force $toolDst }
+    New-Item -ItemType Directory -Path $toolDst -Force | Out-Null
+    foreach ($t in $toolNames) {
+        $src = Join-Path $RepoDir ('scripts\' + $t)
+        if (-not (Test-Path -LiteralPath $src -PathType Leaf)) {
+            Write-Host ('도구가 없습니다: ' + $src)
+            return 1
+        }
+        Copy-Item -LiteralPath $src -Destination $toolDst -Force
+    }
+
     foreach ($p in $pairs) {
         if (-not (Test-Path -LiteralPath $p.Src -PathType Container)) {
             Write-Host ('원본이 없습니다: ' + $p.Src)
@@ -34,6 +49,9 @@ function Test-DistComplete([string]$DistDir) {
         'template\우리팀.md',
         'template\slides',
         'preset\command\합쳐줘.md',
+        'tools\camp-media.sh',
+        'tools\merge-slides.sh',
+        'tools\merge-slides.py',
         '설치하기.cmd',
         '점검하기.cmd',
         '캠프시작.cmd',

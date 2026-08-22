@@ -2,9 +2,9 @@
 # 핵심: 프리셋 로드를 opencode 서버 API 로 "세어서" 확인한다 (실측 검증됨).
 
 $script:ExpectedAgents = 4
-$script:ExpectedCommands = 10
+$script:ExpectedCommands = 11
 $script:AgentNames = @('도우미', '아이디어', '디자이너', '미디어')
-$script:CommandNames = @('시작','아이디어','포스터','음악','영상','슬라이드추가','보여줘','발표연습','제출','도와줘')
+$script:CommandNames = @('시작','아이디어','포스터','음악','영상','슬라이드추가','보여줘','발표연습','제출','도와줘','합쳐줘')
 
 function Get-FakeMode { return $env:CAMP_SELFCHECK_FAKE }
 
@@ -58,8 +58,8 @@ function Test-OpencodeVersion([string]$Expected) {
 
 function Test-PresetLoaded([int]$Port) {
     $fake = Get-FakeMode
-    if ($fake -eq 'ok')      { return @{ Ok = $true;  Agents = 4; Commands = 10 } }
-    if ($fake -eq 'partial') { return @{ Ok = $false; Agents = 3; Commands = 10 } }
+    if ($fake -eq 'ok')      { return @{ Ok = $true;  Agents = 4; Commands = 11 } }
+    if ($fake -eq 'partial') { return @{ Ok = $false; Agents = 3; Commands = 11 } }
     if ($fake -eq 'fail')    { return @{ Ok = $false; Agents = 0; Commands = 0 } }
 
     $exe = Get-OpencodeExe
@@ -156,27 +156,54 @@ function Test-Higgsfield {
     return @{ Ok = ($text -match 'credits'); Credits = $credits }
 }
 
+# 에이전트가 실행하는 도구가 실제로 있는지 확인한다.
+#
+# 이 점검이 없어서 "인스톨러가 도구를 아예 배포하지 않는다" 는 사실을
+# 실기기 E2E 가 통과한 뒤에야 발견했다. 초록불이 4개여도 학생은
+# /포스터 를 쓸 수 없는 상태였다.
+function Test-CampTools {
+    $fake = Get-FakeMode
+    if ($fake -eq 'ok' -or $fake -eq 'partial') { return @{ Ok = $true; Missing = @() } }
+    if ($fake -eq 'fail') { return @{ Ok = $false; Missing = @('camp-media.sh') } }
+
+    $dir = Join-Path $env:LOCALAPPDATA 'Programs\camp-tools'
+    $need = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py')
+    $missing = @()
+    foreach ($n in $need) {
+        if (-not (Test-Path -LiteralPath (Join-Path $dir $n) -PathType Leaf)) { $missing += $n }
+    }
+    return @{ Ok = ($missing.Count -eq 0); Missing = $missing }
+}
+
 function Invoke-SelfCheck {
     Write-Step '설치가 잘 됐는지 확인할게요. 조금만 기다려 주세요.'
     $fails = @()
 
-    Write-Step '1/4 도구가 깔렸는지 확인 중'
+    Write-Step '1/5 도구가 깔렸는지 확인 중'
     if (Test-OpencodeVersion -Expected '1.18.20') { Write-Ok '도구가 깔렸어요' }
     else { Write-Fail '도구가 제대로 안 깔렸어요'; $fails += '도구' }
 
-    Write-Step '2/4 캠프 설정이 들어갔는지 확인 중'
+    Write-Step '2/5 캠프 설정이 들어갔는지 확인 중'
     $p = Test-PresetLoaded -Port 4399
     if ($p.Ok) { Write-Ok '캠프 설정이 들어갔어요' }
     else {
-        Write-Fail ('캠프 설정이 덜 들어갔어요 (도우미 ' + $p.Agents + '/4, 명령 ' + $p.Commands + '/10)')
+        Write-Fail ('캠프 설정이 덜 들어갔어요 (도우미 ' + $p.Agents + '/4, 명령 ' + $p.Commands + '/11)')
         $fails += '설정'
     }
 
-    Write-Step '3/4 AI 도우미가 연결되는지 확인 중'
+    Write-Step '3/5 만들기 도구가 있는지 확인 중'
+    $t = Test-CampTools
+    if ($t.Ok) { Write-Ok '만들기 도구가 있어요' }
+    else {
+        Write-Fail ('만들기 도구가 없어요 (' + ($t.Missing -join ', ') + ')')
+        $fails += '도구파일'
+    }
+
+    Write-Step '4/5 AI 도우미가 연결되는지 확인 중'
     if (Test-DeepSeek) { Write-Ok 'AI 도우미가 연결됐어요' }
     else { Write-Fail 'AI 도우미가 연결되지 않았어요'; $fails += 'AI' }
 
-    Write-Step '4/4 그림 만들기가 연결되는지 확인 중'
+    Write-Step '5/5 그림 만들기가 연결되는지 확인 중'
     $h = Test-Higgsfield
     if ($h.Ok) {
         Write-Ok ('그림 만들기가 연결됐어요 (남은 양 ' + $h.Credits + ')')
@@ -195,6 +222,7 @@ function Invoke-SelfCheck {
     if ($fails -contains '도구')  { Write-Note '- 설치하기를 다시 실행해 주세요.' }
     if ($fails -contains '설정')  { Write-Note '- 설치하기를 다시 실행하면 설정이 다시 들어갑니다.' }
     if ($fails -contains 'AI')    { Write-Note '- 인터넷이 연결됐는지 확인해 주세요.' }
+    if ($fails -contains '도구파일') { Write-Note '- 설치하기를 다시 실행하면 만들기 도구가 다시 들어갑니다.' }
     if ($fails -contains '그림')  { Write-Note '- 인터넷 확인 후에도 안 되면 선생님을 불러 주세요.' }
     Write-Note '그래도 안 되면 선생님께 기록 파일을 보여 주세요.'
     return 1
