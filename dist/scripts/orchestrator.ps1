@@ -14,10 +14,16 @@ function Test-Prerequisites {
     if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
         $reasons += ('64비트 Windows 가 필요해요. (지금: ' + $env:PROCESSOR_ARCHITECTURE + ')')
     }
+    # 필요 공간: 번들 350MB + 설치되는 구성요소 약 1.5GB + 작업 공간.
+    # 5GB 를 요구했더니 디스크가 거의 찬 노트북에서 이유 없이 막혔다(실측).
+    $needGb = 2.5
     $drive = (Get-Item $env:USERPROFILE).PSDrive.Name
     $free = (Get-PSDrive $drive).Free
-    if ($free -lt 5GB) {
-        $reasons += ('빈 공간이 5GB 이상 필요해요. (지금: ' + [math]::Round($free / 1GB, 1) + 'GB)')
+    if ($free -lt ($needGb * 1GB)) {
+        # 반올림하면 4.97GB 가 "5GB" 로 보여서 "5GB 인데 왜 안 되냐" 가 된다.
+        # 내림으로 표시해 메시지가 모순되지 않게 한다.
+        $freeGb = [math]::Floor($free / 1GB * 10) / 10
+        $reasons += ('빈 공간이 ' + $needGb + 'GB 이상 필요해요. (지금 ' + $freeGb + 'GB) 안 쓰는 파일을 지워 주세요.')
     }
 
     return @{ Ok = ($reasons.Count -eq 0); Reasons = $reasons }

@@ -57,7 +57,15 @@ function Test-DistComplete([string]$DistDir) {
         '캠프시작.cmd',
         'scripts\orchestrator.ps1',
         'scripts\selfcheck.ps1',
-        'scripts\launcher.ps1'
+        'scripts\launcher.ps1',
+        'scripts\lib-gui.ps1',
+        'scripts\gui-install.ps1',
+        'scripts\gui-check.ps1',
+        'scripts\gui-launcher.ps1',
+        'scripts\camp.ico',
+        '창의디자인캠프 설치.exe',
+        '캠프 시작.exe',
+        '점검.exe'
     )
     $bundleFiles = @(
         'bundle\opencode-desktop-win-x64.exe',

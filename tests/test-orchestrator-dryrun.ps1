@@ -82,6 +82,15 @@ try {
     $pre = Test-Prerequisites
     Assert-True ($null -ne $pre.Ok) '사전 점검이 결과를 반환'
     Assert-True ($null -ne $pre.Reasons) '사전 점검이 사유 목록을 반환'
+
+    # 디스크 요구량이 과하지 않아야 한다.
+    # 5GB 를 요구했더니 거의 찬 노트북에서 이유 없이 막혔다(실측).
+    # 번들 350MB + 설치 약 1.5GB 이므로 2.5GB 가 상한이다.
+    $orchSrc = Get-Content -LiteralPath (Join-Path $Repo 'dist\scripts\orchestrator.ps1') -Raw -Encoding UTF8
+    Assert-Contains $orchSrc '$needGb = 2.5' '디스크 요구량이 2.5GB'
+    Assert-NotContains $orchSrc '-lt 5GB' '5GB 요구가 남아 있지 않음'
+    # 공간 부족 메시지는 반올림하지 않는다 (4.97GB 가 "5GB" 로 보이면 모순이 된다)
+    Assert-Contains $orchSrc '[math]::Floor($free / 1GB * 10)' '남은 공간을 내림으로 표시'
 }
 finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

@@ -32,13 +32,17 @@ opencode 소스를 포크하지 않는다. 설정·에이전트·명령어·스�
 # 1) 프리셋·템플릿을 dist/ 로 복사
 powershell -File scripts\build-dist.ps1
 
-# 2) 구성요소 내려받기 + 코드 서명 검증 (약 350MB)
+# 2) 아이콘과 진입점 exe 만들기
+powershell -File scripts\make-icon.ps1
+powershell -File scripts\build-exe.ps1
+
+# 3) 구성요소 내려받기 + 코드 서명 검증 (약 350MB)
 powershell -File scripts\fetch-bundle.ps1
 
-# 3) 키 3개를 dist\secrets\ 에 직접 복사
+# 4) 키 3개를 dist\secrets\ 에 직접 복사
 #    auth.json (DeepSeek) / credentials.json, config.json (Higgsfield)
 
-# 4) 완성도 검증
+# 5) 완성도 검증
 powershell -Command ". .\scripts\build-dist.ps1; Test-DistComplete -DistDir '.\dist'"
 ```
 
@@ -95,10 +99,13 @@ bash 테스트는 `OPENCODE_CONFIG_DIR` 로 격리되어 개발자의 실제 ope
    BOM 을 붙인다. `Write-Utf8NoBom` 을 쓴다
 4. **`Invoke-RestMethod` 를 쓰지 않는다.** charset 없는 응답을 ISO-8859-1 로
    디코딩해 한국어를 깨뜨린다. `WebClient` + `Encoding = UTF8` 을 쓴다
-5. **`.cmd` 에서 `pause` 앞에 종료코드를 저장한다.** 안 하면 실패가 성공으로
+5. **함수가 컬렉션을 반환하면 쉼표로 감싼다.** PowerShell 은 반환된 컬렉션을
+   파이프라인에서 풀어헤친다(unroll). 빈 `Queue` 를 그냥 `return` 하면 호출한
+   쪽이 `$null` 을 받는다. `return ,$q` 로 쓴다
+6. **`.cmd` 에서 `pause` 앞에 종료코드를 저장한다.** 안 하면 실패가 성공으로
    보고된다 (`set RC=%ERRORLEVEL%` … `exit /b %RC%`)
 
-`tests\test-encoding.ps1` 이 1·2번을 회귀 검사한다.
+`tests\test-encoding.ps1` 이 1·2번을, `tests\test-gui.ps1` 이 5번을 회귀 검사한다.
 
 ## 문서
 

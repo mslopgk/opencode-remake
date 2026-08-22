@@ -5,3 +5,6 @@ dist/secrets/
 # 빌드 시 복사되는 사본
 dist/preset/
 dist/template/
+# 빌드 산출물 (make-icon / build-exe 로 재생성)
+dist/*.exe
+dist/scripts/camp.ico
