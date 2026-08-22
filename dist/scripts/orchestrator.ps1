@@ -1,0 +1,240 @@
+﻿# 캠프 배포판 설치 오케스트레이터.
+#
+# 핵심 설계: 우리가 인스톨러를 만드는 게 아니라, 이미 코드 서명된 공식
+# 인스톨러들을 조용히 순차 실행한다. 그래서 서명 인증서가 필요 없다.
+# 모든 구성요소는 per-user 로 설치해 관리자 권한을 요구하지 않는다.
+
+function Test-Prerequisites {
+    $reasons = @()
+
+    $os = Get-CimInstance Win32_OperatingSystem
+    if ([int]($os.BuildNumber) -lt 19041) {
+        $reasons += 'Windows 10 (2004) 이상이 필요해요.'
+    }
+    if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
+        $reasons += ('64비트 Windows 가 필요해요. (지금: ' + $env:PROCESSOR_ARCHITECTURE + ')')
+    }
+    $drive = (Get-Item $env:USERPROFILE).PSDrive.Name
+    $free = (Get-PSDrive $drive).Free
+    if ($free -lt 5GB) {
+        $reasons += ('빈 공간이 5GB 이상 필요해요. (지금: ' + [math]::Round($free / 1GB, 1) + 'GB)')
+    }
+
+    return @{ Ok = ($reasons.Count -eq 0); Reasons = $reasons }
+}
+
+function Unblock-BundleFiles([string]$DistDir) {
+    # USB·다운로드로 온 파일에는 차단 플래그가 붙는다.
+    # 이걸 안 떼면 60대에서 전부 막힌다.
+    Get-ChildItem -LiteralPath $DistDir -Recurse -File -ErrorAction SilentlyContinue |
+        ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
+}
+
+function Get-InstallPlan([string]$BundleDir) {
+    $candidates = @(
+        @{ Name = '노드 (AI 도구가 쓰는 부품)'; File = 'node-lts-x64.msi';            Kind = 'msi';    Args = @('/qn', 'ALLUSERS=0') },
+        @{ Name = '파이썬';                     File = 'python-3.12-amd64.exe';       Kind = 'exe';    Args = @('/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0') },
+        @{ Name = 'Git';                        File = 'Git-64-bit.exe';              Kind = 'exe';    Args = @('/VERYSILENT', '/NORESTART', '/NOCANCEL') },
+        @{ Name = '글꼴';                       File = 'CascadiaCode-NF.zip';         Kind = 'font';   Args = @() },
+        @{ Name = '캠프 앱';                    File = 'opencode-desktop-win-x64.exe'; Kind = 'exe';   Args = @('/S') },
+        @{ Name = '점검용 도구';                File = 'opencode-windows-x64.zip';    Kind = 'clizip'; Args = @() }
+    )
+
+    $plan = @()
+    foreach ($c in $candidates) {
+        $path = Join-Path $BundleDir $c.File
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            $c['Path'] = $path
+            $plan += $c
+        }
+    }
+    return $plan
+}
+
+function Expand-ZipTo([string]$ZipPath, [string]$Dest) {
+    if (-not (Test-Path -LiteralPath $Dest)) {
+        New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+    }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $Dest)
+}
+
+function Install-Font([string]$ZipPath) {
+    $fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+    if (-not (Test-Path -LiteralPath $fontDir)) {
+        New-Item -ItemType Directory -Path $fontDir -Force | Out-Null
+    }
+    $tmp = Join-Path $env:TEMP ('font-' + [guid]::NewGuid().ToString('N'))
+    try {
+        Expand-ZipTo -ZipPath $ZipPath -Dest $tmp
+        $key = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+        if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+        Get-ChildItem -LiteralPath $tmp -Recurse -Include '*.ttf', '*.otf' -File | ForEach-Object {
+            $dest = Join-Path $fontDir $_.Name
+            Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
+            Set-ItemProperty -Path $key -Name $_.BaseName -Value $dest
+        }
+    }
+    finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-OpencodeCli([string]$ZipPath) {
+    # 데스크탑 앱에는 CLI 바이너리가 없다(실측 확인). 자체 점검이 CLI 를
+    # 필요로 하므로 standalone 을 따로 풀어 넣는다.
+    $dest = Join-Path $env:LOCALAPPDATA 'Programs\opencode-cli'
+    if (Test-Path -LiteralPath $dest) { Remove-Item -Recurse -Force $dest }
+    $tmp = Join-Path $env:TEMP ('occli-' + [guid]::NewGuid().ToString('N'))
+    try {
+        Expand-ZipTo -ZipPath $ZipPath -Dest $tmp
+        $exe = Get-ChildItem -LiteralPath $tmp -Recurse -Filter 'opencode.exe' -File | Select-Object -First 1
+        if ($null -eq $exe) { return $false }
+        New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        # zip 안의 구조를 그대로 옮긴다 (실행에 필요한 파일이 함께 있을 수 있다)
+        Copy-Item -Path (Join-Path $exe.Directory.FullName '*') -Destination $dest -Recurse -Force
+        return (Test-Path -LiteralPath (Join-Path $dest 'opencode.exe') -PathType Leaf)
+    }
+    finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
+}
+
+function Copy-PresetAndSecrets([string]$DistDir) {
+    # 프리셋
+    $presetSrc = Join-Path $DistDir 'preset'
+    $presetDst = Join-Path $env:USERPROFILE '.config\opencode'
+    if (Test-Path -LiteralPath $presetSrc -PathType Container) {
+        if ((Test-Path -LiteralPath $presetDst) -and (@(Get-ChildItem -LiteralPath $presetDst -Force)).Count -gt 0) {
+            $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            Move-Item -LiteralPath $presetDst -Destination ($presetDst + '.backup-' + $stamp)
+            Write-Note '원래 쓰던 설정은 따로 보관했어요.'
+        }
+        New-Item -ItemType Directory -Path $presetDst -Force | Out-Null
+        Copy-Item -Path (Join-Path $presetSrc '*') -Destination $presetDst -Recurse -Force
+    }
+
+    # 키
+    $sec = Join-Path $DistDir 'secrets'
+    if (Test-Path -LiteralPath (Join-Path $sec 'auth.json') -PathType Leaf) {
+        $dst = Join-Path $env:USERPROFILE '.local\share\opencode'
+        New-Item -ItemType Directory -Path $dst -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $sec 'auth.json') -Destination $dst -Force
+    }
+    foreach ($f in @('credentials.json', 'config.json')) {
+        $src = Join-Path $sec $f
+        if (Test-Path -LiteralPath $src -PathType Leaf) {
+            $dst = Join-Path $env:USERPROFILE '.config\higgsfield'
+            New-Item -ItemType Directory -Path $dst -Force | Out-Null
+            Copy-Item -LiteralPath $src -Destination $dst -Force
+        }
+    }
+}
+
+function Invoke-Install {
+    param(
+        [Parameter(Mandatory=$true)][string]$DistDir,
+        [switch]$DryRun,
+        [switch]$SkipSelfCheck
+    )
+
+    if ($DryRun) { Write-Note '연습 모드입니다. 실제로 설치하지 않습니다.' }
+
+    Write-Step '컴퓨터를 확인하고 있어요'
+    $pre = Test-Prerequisites
+    if (-not $pre.Ok) {
+        foreach ($r in $pre.Reasons) { Write-Fail $r }
+        return 1
+    }
+    Write-Ok '컴퓨터는 괜찮아요'
+
+    Write-Step '파일 차단을 풀고 있어요'
+    if (-not $DryRun) { Unblock-BundleFiles -DistDir $DistDir }
+    Write-Ok '차단을 풀었어요'
+
+    $plan = @(Get-InstallPlan -BundleDir (Join-Path $DistDir 'bundle'))
+    $i = 0
+    foreach ($step in $plan) {
+        $i++
+        Write-Step ("$i/$($plan.Count) " + $step.Name + ' 을(를) 설치하고 있어요')
+        if ($DryRun) {
+            Write-Note ('  (연습) ' + $step.File + ' ' + ($step.Args -join ' '))
+            continue
+        }
+
+        if ($step.Kind -eq 'font') {
+            Install-Font -ZipPath $step.Path
+        }
+        elseif ($step.Kind -eq 'clizip') {
+            if (-not (Install-OpencodeCli -ZipPath $step.Path)) {
+                Write-Fail ($step.Name + ' 설치에 실패했어요.')
+                return 1
+            }
+        }
+        elseif ($step.Kind -eq 'msi') {
+            $p = Start-Process -FilePath 'msiexec.exe' -ArgumentList (@('/i', $step.Path) + $step.Args) -PassThru -Wait
+            if ($p.ExitCode -ne 0) { Write-Fail ($step.Name + ' 설치에 실패했어요.'); return 1 }
+        }
+        else {
+            $p = Start-Process -FilePath $step.Path -ArgumentList $step.Args -PassThru -Wait
+            if ($p.ExitCode -ne 0) { Write-Fail ($step.Name + ' 설치에 실패했어요.'); return 1 }
+        }
+        Write-Ok ($step.Name + ' 을(를) 설치했어요')
+    }
+
+    Write-Step '캠프 설정을 넣고 있어요'
+    if (-not $DryRun) { Copy-PresetAndSecrets -DistDir $DistDir }
+    Write-Ok '캠프 설정을 넣었어요'
+
+    Write-Step '연습 폴더를 만들고 있어요'
+    if (-not $DryRun) {
+        $parent = Join-Path $env:USERPROFILE '창의디자인캠프'
+        $practice = Join-Path $parent '연습'
+        if (-not (Test-Path -LiteralPath $practice)) {
+            New-Item -ItemType Directory -Path $practice -Force | Out-Null
+            $tpl = Join-Path $DistDir 'template'
+            if (Test-Path -LiteralPath $tpl -PathType Container) {
+                Copy-Item -Path (Join-Path $tpl '*') -Destination $practice -Recurse -Force
+            }
+        }
+        Add-RegisteredProject -Path $practice | Out-Null
+        Set-OnboardingComplete | Out-Null
+    }
+    Write-Ok '연습 폴더를 만들었어요'
+
+    if ($SkipSelfCheck) { return 0 }
+
+    Write-Host ''
+    return (Invoke-SelfCheck)
+}
+
+# .cmd 진입점이 부르는 함수.
+#
+# 왜 한국어가 .cmd 가 아니라 여기 있는가: cmd.exe 는 UTF-8 배치 파일의
+# 비ASCII 문자를 잘못 파싱한다(chcp 65001 을 넣어도 바이트 오프셋이 어긋나
+# 명령이 쪼개진다). 실측으로 확인했다. 그래서 .cmd 는 순수 ASCII 로만 두고
+# 학생이 읽는 모든 문장을 PowerShell 쪽에 둔다.
+function Start-CampInstall([string]$DistDir) {
+    $logPath = Join-Path $env:USERPROFILE '창의디자인캠프\설치기록.txt'
+    Start-CampLog $logPath
+
+    Write-Host ''
+    Write-Host '  창의디자인캠프 준비를 시작합니다.'
+    Write-Host '  10분쯤 걸려요. 창을 닫지 말고 기다려 주세요.'
+    Write-Host ''
+
+    $rc = Invoke-Install -DistDir $DistDir
+
+    Write-Host ''
+    if ($rc -eq 0) {
+        Write-Host '  준비 끝! 캠프 당일에 "캠프시작" 을 눌러 주세요.'
+    }
+    else {
+        Write-Host '  준비가 다 안 됐어요. 선생님을 불러 주세요.'
+        Write-Host ('  기록 파일: ' + $logPath)
+    }
+    Write-Host ''
+
+    Stop-CampLog
+    return $rc
+}

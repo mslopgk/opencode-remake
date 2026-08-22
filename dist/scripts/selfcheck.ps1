@@ -108,11 +108,36 @@ function Test-DeepSeek {
     if ($fake) { return ($fake -eq 'ok' -or $fake -eq 'partial') }
     $exe = Get-OpencodeExe
     if ($null -eq $exe) { return $false }
-    $out = & $exe run '안녕하세요' --agent 도우미
-    if ($LASTEXITCODE -ne 0) { return $false }
-    $text = [string]::Join("`n", @($out))
-    # 한국어 응답이 왔는지 (한글 음절이 하나라도 있으면 통과)
-    return ($text -match '[가-힣]')
+    # 실측 함정: 도우미 에이전트가 없으면 opencode 가 기본 에이전트로 폴백해
+    # 한국어로 답해버린다. 그러면 프리셋이 없는데도 이 점검이 통과한다.
+    # 폴백 경고는 stderr 로 나가므로 파일로 따로 받아서 확인한다.
+    # (네이티브 exe 에 2>&1 을 붙이면 5.1 에서 NativeCommandError 가 되므로 쓰지 않는다)
+    $tmpOut = Join-Path $env:TEMP ('camp-ds-out-' + [guid]::NewGuid().ToString('N') + '.txt')
+    $tmpErr = Join-Path $env:TEMP ('camp-ds-err-' + [guid]::NewGuid().ToString('N') + '.txt')
+    try {
+        $p = Start-Process -FilePath $exe `
+            -ArgumentList @('run', '안녕하세요', '--agent', '도우미') `
+            -PassThru -Wait -WindowStyle Hidden `
+            -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr
+        if ($p.ExitCode -ne 0) { return $false }
+
+        $errText = ''
+        if (Test-Path -LiteralPath $tmpErr -PathType Leaf) {
+            $errText = Get-Content -LiteralPath $tmpErr -Raw -Encoding UTF8
+        }
+        if ($errText -and $errText -match 'Falling back to default agent') { return $false }
+
+        $text = ''
+        if (Test-Path -LiteralPath $tmpOut -PathType Leaf) {
+            $text = Get-Content -LiteralPath $tmpOut -Raw -Encoding UTF8
+        }
+        # 한국어 응답이 왔는지 (한글 음절이 하나라도 있으면 통과)
+        return ($text -match '[가-힣]')
+    }
+    finally {
+        Remove-Item -LiteralPath $tmpOut -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $tmpErr -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Test-Higgsfield {
@@ -173,4 +198,14 @@ function Invoke-SelfCheck {
     if ($fails -contains '그림')  { Write-Note '- 인터넷 확인 후에도 안 되면 선생님을 불러 주세요.' }
     Write-Note '그래도 안 되면 선생님께 기록 파일을 보여 주세요.'
     return 1
+}
+
+# 점검하기.cmd 가 부르는 함수. 한국어를 .cmd 에 두지 않기 위한 진입점이다
+# (cmd.exe 는 UTF-8 배치 파일의 비ASCII 를 잘못 파싱한다 — 실측 확인).
+function Start-CampCheck {
+    $logPath = Join-Path $env:USERPROFILE '창의디자인캠프\점검기록.txt'
+    Start-CampLog $logPath
+    $rc = Invoke-SelfCheck
+    Stop-CampLog
+    return $rc
 }
