@@ -4,7 +4,7 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO/tests/lib/assert.sh"
 
-CMDS="시작 아이디어 포스터 음악 영상 슬라이드추가 보여줘 발표연습 제출 도와줘"
+CMDS="시작 아이디어 포스터 음악 영상 슬라이드추가 보여줘 발표연습 제출 도와줘 합쳐줘"
 VALID_AGENTS="도우미 아이디어 디자이너 미디어"
 
 for c in $CMDS; do
@@ -37,5 +37,11 @@ assert_not_contains "$P" "higgsfield generate" "/포스터 가 CLI 를 직접 �
 # /영상 은 횟수 제한을 학생에게 알려야 한다
 V="$(cat "$REPO/camp-preset/command/영상.md" 2>/dev/null || echo '')"
 assert_contains "$V" "2번" "/영상 이 횟수 제한을 안내"
+
+# /합쳐줘 는 slides 조립을 지시해야 한다
+M="$(cat "$REPO/camp-preset/command/합쳐줘.md" 2>/dev/null || echo '')"
+assert_contains "$M" "slides/" "/합쳐줘 가 slides 폴더를 참조"
+assert_contains "$M" "index.html" "/합쳐줘 가 조립 대상을 명시"
+assert_contains "$M" "중복으로 쌓지 마라" "/합쳐줘 가 중복 조립을 금지"
 
 summary
