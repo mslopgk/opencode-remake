@@ -30,4 +30,7 @@ C="$(cat "$REPO/camp-preset/skills/campaign-planning/SKILL.md" 2>/dev/null || ec
 assert_contains "$C" "How Might We" "campaign-planning 에 HMW"
 assert_contains "$C" "우리팀.md" "campaign-planning 이 기록 파일을 명시"
 
+assert_contains "$W" "slides/" "web-slides 가 분리 구조를 설명"
+assert_contains "$W" "자기 파일만" "web-slides 가 자기 파일만 고치라고 지시"
+
 summary

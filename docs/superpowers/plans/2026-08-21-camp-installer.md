@@ -16,13 +16,31 @@
 - **Windows PowerShell 5.1 전용.** `pwsh` 는 학생 노트북에 없다. 삼항연산자(`? :`),
   `??`, `?.`, `ConvertFrom-Json -AsHashtable` 을 쓰지 않는다. `if/else` 와
   명시적 `$null -eq` 비교를 쓴다
+- **`.ps1` 소스 파일은 UTF-8 BOM 으로 저장한다.** (구현 중 실제로 겪음)
+  Windows PowerShell 5.1 은 BOM 이 없는 `.ps1` 을 ANSI 로 읽어서 **스크립트 안의
+  한국어 문자열이 통째로 깨진다.** 출력 인코딩을 맞추는 것만으로는 해결되지 않는다.
+  `tests/test-encoding.ps1` 이 이를 회귀 검사한다
 - **파일 쓰기는 인코딩을 명시한다.** `Set-Content`/`Add-Content` 는 기본이 ANSI 이므로
   한국어가 깨진다. 반드시 `-Encoding utf8`
+- **`.cmd` 진입점에는 `chcp 65001` 을 넣는다.** 콘솔이 UTF-8 이 아니면 한국어가 깨진다
+- **학생에게 써 주는 파일은 UTF-8 "BOM 없음" 이어야 한다.** (구현 중 실제로 겪음)
+  `.ps1` 소스는 BOM 이 필요한데 학생 파일은 정반대다. `Set-Content -Encoding utf8` 은
+  5.1 에서 BOM 을 붙이므로 학생 파일에 쓰면 안 된다 — HTML 앞의 BOM 은 렌더링
+  문제를 일으키고 `new-team.sh` 판과 바이트가 달라진다.
+  `Write-Utf8NoBom` 헬퍼(`lib-team.ps1`)를 쓴다
 - **네이티브 exe 에 `2>&1` 을 붙이지 않는다.** 5.1 에서 NativeCommandError 로 감싸져
   exit 0 인데도 `$?` 가 `$false` 가 된다
 - **전 구성요소 per-user 설치.** 관리자 권한을 요구하면 실패로 간주한다
   (`ALLUSERS=0`, `InstallAllUsers=0`, 글꼴은 HKCU)
-- **opencode 버전 고정**: `1.18.20`. 데스크탑 앱 자산은 `opencode-desktop-win-x64.exe`
+- **opencode 버전 고정**: `1.18.20`. 데스크탑 앱 자산은 `opencode-desktop-win-x64.exe`,
+  standalone CLI 자산은 `opencode-windows-x64.zip`. **둘 다 필요하다** — 데스크탑 앱
+  설치 폴더에는 CLI 바이너리가 들어 있지 않아(실측 확인) 자체 점검이 불가능해진다
+- **`Invoke-RestMethod` 금지.** (구현 중 실제로 겪음) 5.1 이 charset 없는 응답을
+  ISO-8859-1 로 디코딩해 한국어 이름을 깨뜨린다(`도우미` → Latin-1 9자).
+  `System.Net.WebClient` + `Encoding = UTF8` 로 직접 받는다
+- **`Start-Process 'opencode'` 금지.** (구현 중 실제로 겪음) PATH 의 `opencode` 는
+  npm 셰임 `opencode.ps1`(ExternalScript)이라 프로세스로 실행되지 않고 서버가
+  뜨지 않는다. `Get-OpencodeExe` 로 실행파일 경로를 찾아 넘긴다
 - **학생 대면 텍스트는 전부 한국어.** 학생 이름·학교를 묻지 않는다
 - **팀 식별자는 `NN조_팀명`** (조번호 두 자리, 1~15). `scripts/new-team.sh` 와
   동일 규칙을 유지한다
@@ -75,6 +93,7 @@ tests/
 - Create: `dist/scripts/lib-log.ps1`
 - Create: `tests/run-all.ps1`
 - Create: `tests/test-log.ps1`
+- Create: `tests/test-encoding.ps1`
 - Modify: `.gitignore` (신규 생성)
 
 **Interfaces:**
@@ -1200,6 +1219,7 @@ try {
     Assert-Contains $joined 'Git' '계획에 Git 포함'
     Assert-Contains $joined '글꼴' '계획에 글꼴 포함'
     Assert-Contains $joined '앱' '계획에 데스크탑 앱 포함'
+    Assert-Contains $joined '점검용 도구' '계획에 standalone CLI 포함(자체 점검에 필요)'
     Assert-NotContains $joined 'VS Code' 'VS Code 는 계획에 없음'
 
     # --- per-user 설치 인자가 들어갔는지 (관리자권한 회피) ---
@@ -1288,7 +1308,8 @@ function Get-InstallPlan([string]$BundleDir) {
         @{ Name = '파이썬';                     File = 'python-3.12-amd64.exe';       Kind = 'exe'; Args = @('/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0') },
         @{ Name = 'Git';                        File = 'Git-64-bit.exe';              Kind = 'exe'; Args = @('/VERYSILENT', '/NORESTART', '/NOCANCEL') },
         @{ Name = '글꼴';                       File = 'CascadiaCode-NF.zip';         Kind = 'font'; Args = @() },
-        @{ Name = '캠프 앱';                    File = 'opencode-desktop-win-x64.exe'; Kind = 'exe'; Args = @('/S') }
+        @{ Name = '캠프 앱';                    File = 'opencode-desktop-win-x64.exe'; Kind = 'exe'; Args = @('/S') },
+        @{ Name = '점검용 도구';                File = 'opencode-windows-x64.zip';    Kind = 'clizip'; Args = @() }
     )
 
     $plan = @()
@@ -1652,6 +1673,8 @@ function Get-BundleSources {
     return @(
         @{ Name = 'opencode-desktop-win-x64.exe'
            Url  = 'https://github.com/anomalyco/opencode/releases/download/v1.18.20/opencode-desktop-win-x64.exe' },
+        @{ Name = 'opencode-windows-x64.zip'
+           Url  = 'https://github.com/anomalyco/opencode/releases/download/v1.18.20/opencode-windows-x64.zip' },
         @{ Name = 'node-lts-x64.msi'
            Url  = 'https://nodejs.org/dist/v22.20.0/node-v22.20.0-x64.msi' },
         @{ Name = 'python-3.12-amd64.exe'

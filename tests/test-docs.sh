@@ -19,4 +19,19 @@ for c in $(grep -oE '/[가-힣]+' "$C" 2>/dev/null | sort -u | tr -d '/'); do
   fi
 done
 
+# 사전교육 문서가 실제 진입점 이름을 쓰는가
+G="$(cat "$REPO/docs/운영/사전온라인교육-2시간.md" 2>/dev/null || echo '')"
+assert_contains "$G" "설치하기" "사전교육 문서가 설치하기 진입점을 안내"
+assert_contains "$G" "초록불" "사전교육 문서가 자체 점검을 안내"
+
+# 멘토 문서가 점검하기·캠프시작을 안내하는가
+T="$(cat "$REPO/docs/운영/멘토용-트러블슈팅.md" 2>/dev/null || echo '')"
+assert_contains "$T" "점검하기" "멘토 문서가 재점검 방법을 안내"
+assert_contains "$T" "캠프시작" "멘토 문서가 런처를 안내"
+
+# README 가 배포판 빌드 절차를 담는가
+R="$(cat "$REPO/README.md" 2>/dev/null || echo '')"
+assert_contains "$R" "build-dist" "README 에 배포판 빌드 절차"
+assert_contains "$R" "fetch-bundle" "README 에 번들 수집 절차"
+
 summary

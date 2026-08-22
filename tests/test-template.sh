@@ -39,4 +39,11 @@ assert_contains "$H" "ArrowLeft" "왼쪽 화살표 조작"
 assert_not_contains "$H" "require(" "require 없음"
 assert_not_contains "$H" "import " "ES import 없음"
 
+# 팀 협업: slides 분리 구조
+if [ -d "$REPO/template/slides" ]; then pass "slides 폴더 존재"
+else fail "slides 폴더 없음"; fi
+assert_contains "$H" "여기에 친구들 슬라이드가 들어갑니다" "index.html 에 조립 지점 표시"
+TEAMDOC="$(cat "$REPO/template/우리팀.md" 2>/dev/null || echo '')"
+assert_contains "$TEAMDOC" "나는 몇 번 친구" "우리팀.md 에 내 번호 항목"
+
 summary

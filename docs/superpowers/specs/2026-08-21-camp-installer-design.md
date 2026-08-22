@@ -40,7 +40,7 @@
 | 학생이 보는 화면 | **opencode 데스크탑 앱** (터미널 아님) |
 | 자체 IDE / 외부 IDE | **만들지 않고 쓰지 않는다.** 데스크탑 앱이 그 역할 |
 | 배포 방식 | 사전배포(9/14~18 설치 지도) + 당일 미설치자 USB 구제 |
-| 포함 구성요소 | opencode 데스크탑 · Node LTS · Python 3.12 · Git · Nerd Font · higgsfield CLI · 프리셋 · 키 |
+| 포함 구성요소 | opencode 데스크탑 · **opencode standalone CLI** · Node LTS · Python 3.12 · Git · Nerd Font · higgsfield CLI · 프리셋 · 키 |
 | 제외 | VS Code (GUI 방식이라 학생이 쓸 일이 없음) · Docker · WSL · Java |
 | 이번 범위 | **인스톨러 + 당일 런처** 둘 다 |
 
@@ -50,6 +50,32 @@
 정확한 지적이다. 데스크탑 앱 안에 프로젝트·세션·에이전트가 다 들어 있어서
 편집기를 따로 띄울 이유가 없고, 학생은 설계상 코드를 보지 않는다.
 결과 확인은 `/보여줘`(브라우저)로 한다.
+
+### standalone CLI 를 함께 넣어야 하는 이유 (구현 중 발견)
+
+데스크탑 앱 설치 폴더(`%LOCALAPPDATA%\Programs\@opencode-aidesktop`)에는
+`OpenCode.exe`(Electron 껍데기)와 네이티브 node 모듈만 있고 **`opencode` CLI
+바이너리가 없다.** 실측으로 확인했다.
+
+자체 점검(6절)은 `opencode serve` 로 `/agent`·`/command` 개수를 세는 방식이므로
+CLI 가 없으면 "프리셋이 먹었는지" 를 기계적으로 확인할 수 없다.
+그래서 `opencode-windows-x64.zip`(57MB)을 번들에 넣고
+`%LOCALAPPDATA%\Programs\opencode-cli\opencode.exe` 로 풀어 설치한다.
+
+덤으로 멘토가 문제를 진단할 수단이 생기고, 데스크탑 앱이 안 열리는 노트북에서
+TUI 로 우회할 길도 남는다.
+
+### PowerShell 함정 두 가지 (구현 중 실측)
+
+1. **`Invoke-RestMethod` 는 쓸 수 없다.** Windows PowerShell 5.1 은 `charset` 이
+   없는 응답을 ISO-8859-1 로 디코딩한다. opencode 서버는
+   `Content-Type: application/json` 을 charset 없이 보내므로 한국어 에이전트·명령
+   이름이 통째로 깨진다(`도우미` → 9개의 Latin-1 문자). `System.Net.WebClient` 에
+   `Encoding = UTF8` 을 지정해 직접 받는다.
+2. **`Start-Process 'opencode'` 는 서버를 띄우지 못한다.** PATH 의 `opencode` 는
+   npm 셰임 `opencode.ps1`(ExternalScript)로 해석되고 `Start-Process` 는 `.ps1` 을
+   프로세스로 실행할 수 없다. 프로세스는 생기지만 포트가 열리지 않는다.
+   실행파일 경로를 직접 찾아(`Get-OpencodeExe`) 넘긴다.
 
 ## 4. 구성
 

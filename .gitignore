@@ -1,0 +1,7 @@
+# 배포판 구성요소 — 121MB 인스톨러 등은 커밋하지 않는다
+dist/bundle/
+# API 키 — 절대 커밋하지 않는다
+dist/secrets/
+# 빌드 시 복사되는 사본
+dist/preset/
+dist/template/
