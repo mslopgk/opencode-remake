@@ -60,10 +60,10 @@ assert_eq "$N4" "1" "태그 없는 파일도 1장"
 assert_contains "$(cat "$T3/index.html")" "태그 없는 내용" "내용이 들어감"
 assert_contains "$(cat "$T3/index.html")" 'class="slide"' "section 으로 감싸짐"
 
-# --- 7) 합친 뒤에도 오프라인 유지 ---
+# --- 7) 합친 뒤에도 빌드 도구가 끼어들지 않는다 ---
+# (CDN 은 2026-08-24 부터 허용이라 검사하지 않는다)
 H="$(cat "$T2/index.html")"
-assert_not_contains "$H" "https://" "외부 URL 없음"
-assert_not_contains "$H" "cdn" "CDN 없음"
+assert_not_contains "$H" "npm install" "빌드 도구 없음"
 
 # --- 8) 인자 검증 ---
 bash "$S" >/dev/null 2>&1

@@ -89,11 +89,64 @@
 <div class="page"><span id="now">1</span> / <span id="all">7</span></div>
 <div class="hint">← → 눌러서 넘기기</div>
 
+<!-- 움직임 라이브러리. 없어도 발표자료는 그대로 보인다 -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js"></script>
+
 <script>
 (function(){
   var slides = document.querySelectorAll('.slide');
   var i = 0;
   document.getElementById('all').textContent = slides.length;
+
+  // 움직임을 불편해하는 사람을 위한 설정을 존중한다
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // 장이 나타날 때 안쪽 요소가 아래에서 살짝 올라온다.
+  // GSAP 이 없거나(CDN 실패) 사용자가 움직임을 껐으면 그냥 보여준다.
+  // 무슨 일이 있어도 글은 보여야 한다. 인라인 스타일을 지워 원래 모습으로 돌린다.
+  function 무조건보이기(items){
+    for (var k = 0; k < items.length; k++) {
+      items[k].style.opacity = '';
+      items[k].style.transform = '';
+      items[k].style.translate = '';
+      items[k].style.rotate = '';
+      items[k].style.scale = '';
+    }
+  }
+
+  function animateIn(slide){
+    var items = slide.children;
+
+    // 움직임을 껐거나, CDN 이 실패했거나, 화면에 안 보이는 탭이면 그냥 보여준다.
+    // (안 보이는 탭에서는 브라우저가 애니메이션을 멈춰서 opacity 0 으로 굳는다)
+    if (reduceMotion || !window.gsap || document.hidden) {
+      무조건보이기(items);
+      return;
+    }
+
+    gsap.killTweensOf(items);
+    gsap.fromTo(items,
+      { opacity: 0, y: 18 },
+      { opacity: 1, y: 0, duration: 0.45, stagger: 0.08, ease: 'power2.out', clearProps: 'all' }
+    );
+
+    // 마지막 안전망: 1.2초 뒤에도 아직 투명하면 애니메이션을 포기하고 보여준다.
+    // 발표 중에 글이 안 보이는 것보다 움직임이 없는 게 낫다.
+    clearTimeout(slide.__safety);
+    slide.__safety = setTimeout(function(){
+      if (items.length && getComputedStyle(items[0]).opacity !== '1') {
+        gsap.killTweensOf(items);
+        무조건보이기(items);
+      }
+    }, 1200);
+  }
+
+  // 탭으로 돌아왔을 때 굳어 있으면 풀어 준다
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden) { animateIn(slides[i]); }
+  });
+
   function show(n){
     if (n < 0) n = 0;
     if (n > slides.length - 1) n = slides.length - 1;
@@ -101,6 +154,7 @@
     i = n;
     slides[i].classList.add('on');
     document.getElementById('now').textContent = i + 1;
+    animateIn(slides[i]);
   }
   document.addEventListener('keydown', function(e){
     if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { show(i+1); }
@@ -111,6 +165,11 @@
   document.addEventListener('click', function(e){
     show(e.clientX < window.innerWidth/3 ? i-1 : i+1);
   });
+
+  // 첫 장에도 등장 애니메이션을 걸어 준다.
+  // CDN 이 늦게 도착할 수 있으니 load 까지 기다린다.
+  if (document.readyState === 'complete') { animateIn(slides[0]); }
+  else { window.addEventListener('load', function(){ animateIn(slides[0]); }); }
 })();
 </script>
 </body>
