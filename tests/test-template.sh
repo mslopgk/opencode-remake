@@ -13,10 +13,9 @@ assert_contains "$H" "<!doctype html>" "doctype 선언"
 assert_contains "$H" 'lang="ko"' "한국어 문서"
 assert_contains "$H" 'charset="utf-8"' "UTF-8 인코딩"
 
-# 오프라인에서 반드시 열려야 한다 — 외부 리소스 금지
-assert_not_contains "$H" "https://" "외부 URL 없음 (오프라인 동작)"
-assert_not_contains "$H" "http://" "외부 URL 없음 (오프라인 동작)"
-assert_not_contains "$H" "cdn" "CDN 참조 없음"
+# CDN 은 허용한다 (캠프장 인터넷이 잘 된다).
+# 대신 빌드 도구는 여전히 금지 — npm install 이 터지면 그 팀이 날아간다.
+assert_not_contains "$H" "npm install" "빌드 도구 없음"
 
 # 슬라이드 구조
 assert_contains "$H" 'class="slide"' "slide 클래스 존재"

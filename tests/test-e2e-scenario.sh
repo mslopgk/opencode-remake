@@ -58,11 +58,10 @@ AFTER=$(grep -o 'class="slide' "$TEAM/index.html" | wc -l | tr -d ' ')
 if [ "$AFTER" -gt "$BEFORE" ]; then pass "슬라이드가 늘어남 ($BEFORE → $AFTER)"
 else fail "슬라이드가 늘지 않음 ($BEFORE → $AFTER)"; fi
 
-# --- 6) 발표자료가 여전히 오프라인에서 열림 ---
+# --- 6) 발표자료에 빌드 도구가 끼어들지 않았는지 ---
 echo "  [6/7] 오프라인 유지 확인..."
 H="$(cat "$TEAM/index.html")"
-assert_not_contains "$H" "https://" "외부 URL 이 추가되지 않음"
-assert_not_contains "$H" "cdn" "CDN 이 추가되지 않음"
+# CDN 은 허용이므로 검사하지 않는다
 assert_not_contains "$H" "npm" "빌드 도구가 추가되지 않음"
 
 # --- 7) 영상 한도 초과가 실제로 막히는지 ---
