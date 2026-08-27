@@ -109,6 +109,7 @@ bash 테스트는 `OPENCODE_CONFIG_DIR` 로 격리되어 개발자의 실제 ope
 
 ## 문서
 
+- **학생용 기능 명세 (제한·추가·커스텀)**: `docs/학생용-기능-명세.md`
 - 프리셋 설계: `docs/superpowers/specs/2026-08-21-camp-opencode-preset-design.md`
 - 배포판 설계: `docs/superpowers/specs/2026-08-21-camp-installer-design.md`
 - 구현 계획: `docs/superpowers/plans/`
