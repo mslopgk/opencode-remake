@@ -234,6 +234,9 @@ else
     exit 5
   fi
   ERR="$(mktemp)"
+  # 파이썬이 한국어 메시지를 cp949 로 쓰면 아래 case 패턴이 안 맞는다(실측).
+  # media-gen.py 안에서도 고정하지만 여기서도 한 번 더 못박는다.
+  export PYTHONIOENCODING=utf-8
   if "$PY" "$HERE/media-gen.py" --provider "$PROVIDER" --model "$MODEL" \
         --prompt "$PROMPT" --out "$DEST" --kind "$KIND" \
         --steps "$STEPS" --extra "$EXTRA" \

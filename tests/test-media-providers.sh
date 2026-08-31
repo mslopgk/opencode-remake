@@ -128,4 +128,14 @@ OUT11="$( export FAL_KEY="깨진열쇠"
 assert_contains "$OUT11" "선생님" "깨진 열쇠는 사람 말로 안내"
 assert_not_contains "$OUT11" "codec" "파이썬 오류를 그대로 보여주지 않음"
 
+# --- 12) 파이썬 메시지가 UTF-8 로 나와야 한다 ---
+# 실측 사고: Windows 파이썬이 stderr 를 cp949 로 써서 "열쇠가 없어요" 를
+# 셸이 못 잡았다. 그래서 exit 6 이 절대 안 나오고 늘 5 였다.
+# 학생에게는 "재료가 다 떨어졌어요" 대신 엉뚱한 안내가 갔을 것이다.
+SRC12="$(cat "$REPO/scripts/media-gen.py")"
+assert_contains "$SRC12" 'encoding="utf-8"' "media-gen.py 가 출력 인코딩을 고정"
+assert_contains "$SRC12" "TextIOWrapper" "stdout·stderr 를 감싼다"
+SH12="$(cat "$S")"
+assert_contains "$SH12" "PYTHONIOENCODING=utf-8" "셸에서도 한 번 더 고정"
+
 summary

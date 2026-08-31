@@ -231,6 +231,59 @@ function Install-CampTools([string]$DistDir) {
     return (Test-Path -LiteralPath (Join-Path $dst 'camp-media.sh') -PathType Leaf)
 }
 
+# 바탕화면에 바로가기를 만든다.
+#
+# 왜 필요한가: 설치 파일은 %LOCALAPPDATA% 안에 풀린다. 학생은 그 폴더를
+# 찾아갈 수 없다. 문서와 강의 대본이 "바탕화면에 아이콘이 생깁니다" 라고
+# 약속하므로 실제로 만들어야 한다.
+#
+# 실측 사고: ZIP 을 바탕화면에 풀던 방식에서 exe 자동해제 방식으로 바꿀 때
+# 이 단계를 빼먹었다. 다른 사용자 계정에서 설치했더니 아이콘이 하나도
+# 생기지 않았다. 녹화 중에 발견했다.
+#
+# OneDrive 를 쓰면 바탕화면이 옮겨져 있으므로 Windows 에 직접 물어본다.
+function New-CampShortcuts([string]$DistDir) {
+    $desktop = $null
+    try { $desktop = [Environment]::GetFolderPath('Desktop') } catch { }
+    if ([string]::IsNullOrWhiteSpace($desktop) -or -not (Test-Path -LiteralPath $desktop)) {
+        $desktop = Join-Path $env:USERPROFILE 'Desktop'
+    }
+    if (-not (Test-Path -LiteralPath $desktop -PathType Container)) { return 0 }
+
+    # 학생이 실제로 누르는 것들. 순서가 바탕화면 정렬에 영향을 준다.
+    $targets = @(
+        '캠프 시작.exe',
+        '발표자료 보기.exe',
+        '점검.exe',
+        '창의디자인캠프 설치.exe',
+        '깃허브 연결.exe'
+    )
+
+    $made = 0
+    $shell = $null
+    try { $shell = New-Object -ComObject WScript.Shell } catch { return 0 }
+
+    foreach ($name in $targets) {
+        $exe = Join-Path $DistDir $name
+        if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { continue }
+        $lnk = Join-Path $desktop ([System.IO.Path]::GetFileNameWithoutExtension($name) + '.lnk')
+        try {
+            $sc = $shell.CreateShortcut($lnk)
+            $sc.TargetPath = $exe
+            $sc.WorkingDirectory = $DistDir
+            $sc.IconLocation = $exe + ',0'
+            $sc.Save()
+            $made++
+        }
+        catch { }
+    }
+
+    if ($null -ne $shell) {
+        try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null } catch { }
+    }
+    return $made
+}
+
 function Copy-PresetAndSecrets([string]$DistDir) {
     # 프리셋
     $presetSrc = Join-Path $DistDir 'preset'
@@ -340,6 +393,14 @@ function Invoke-Install {
     Write-Step '캠프 설정을 넣고 있어요'
     if (-not $DryRun) { Copy-PresetAndSecrets -DistDir $DistDir }
     Write-Ok '캠프 설정을 넣었어요'
+
+    Write-Step '바탕화면에 아이콘을 놓고 있어요'
+    if (-not $DryRun) {
+        $n = New-CampShortcuts -DistDir $DistDir
+        if ($n -ge 1) { Write-Ok ('바탕화면에 아이콘 ' + $n + '개를 놓았어요') }
+        else { Write-Fail '바탕화면에 아이콘을 놓지 못했어요. 설치하기를 다시 실행해 주세요.' }
+    }
+    else { Write-Ok '바탕화면에 아이콘을 놓았어요' }
 
     Write-Step '연습 폴더를 만들고 있어요'
     if (-not $DryRun) {

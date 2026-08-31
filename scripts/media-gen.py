@@ -17,12 +17,26 @@ merge-slides.py 와 같은 이유다.
 """
 import argparse
 import base64
+import io
 import json
 import os
 import sys
 import time
 import urllib.error
 import urllib.request
+
+# Windows 파이썬은 stderr 를 콘솔 코드페이지(cp949)로 쓴다.
+# 그러면 셸에서 한국어 메시지를 패턴으로 못 잡는다 — "열쇠가 없어요" 를
+# 구분하지 못해 exit 6 이 절대 나오지 않았다(실측). UTF-8 로 못박는다.
+# 이 프로젝트는 인코딩으로 세 번째 당했다.
+for _s in ("stdout", "stderr"):
+    _f = getattr(sys, _s, None)
+    if _f is not None and hasattr(_f, "buffer"):
+        try:
+            setattr(sys, _s, io.TextIOWrapper(_f.buffer, encoding="utf-8",
+                                              errors="replace", line_buffering=True))
+        except Exception:
+            pass
 
 TIMEOUT = 120
 

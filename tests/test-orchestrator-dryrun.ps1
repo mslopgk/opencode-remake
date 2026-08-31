@@ -96,4 +96,24 @@ finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     Remove-Item Env:\CAMP_APPSTATE_DIR -ErrorAction SilentlyContinue
 }
+
+# ── 바탕화면 바로가기 ────────────────────────────────────────────
+# 실측 사고: ZIP 을 바탕화면에 풀던 방식에서 exe 자동해제 방식으로 바꿀 때
+# 이 단계를 빼먹었다. 설치 파일이 %LOCALAPPDATA% 에 풀리므로 학생은
+# 아무것도 찾을 수 없었다. 다른 사용자 계정에서 녹화하다 발견했다.
+$orch = Get-Content -LiteralPath (Join-Path $Repo 'dist\scripts\orchestrator.ps1') -Raw -Encoding UTF8
+
+Assert-True ($orch -match 'function New-CampShortcuts') '바로가기 만드는 함수가 있다'
+Assert-True ($orch -match "GetFolderPath\('Desktop'\)") 'OneDrive 를 고려해 Windows 에 바탕화면 경로를 물어본다'
+Assert-True ($orch -match 'WScript.Shell') '바로가기를 실제로 만든다'
+Assert-True ($orch -match '바탕화면에 아이콘을 놓고 있어요') '설치 흐름에서 호출한다'
+
+# 학생이 눌러야 하는 것이 다 있는지
+foreach ($n in @('캠프 시작.exe', '발표자료 보기.exe', '점검.exe', '창의디자인캠프 설치.exe', '깃허브 연결.exe')) {
+    Assert-True ($orch -match [regex]::Escape($n)) ('바로가기 대상에 포함: ' + $n)
+}
+
+# 실패해도 설치를 중단하지 않는다 (아이콘이 없어도 프로그램은 동작한다)
+Assert-True ($orch -match '바탕화면에 아이콘을 놓지 못했어요') '실패 시 안내만 하고 계속한다'
+
 if (Test-Summary) { exit 0 } else { exit 1 }
