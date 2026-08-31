@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# 제공자 연동 테스트 (fal Nano Banana 2 · fal MiniMax H3 · Cloudflare 비상경로).
+# 비상 경로(Cloudflare · fal) 연동 테스트.
+#
+# 평소에는 전부 Higgsfield 로 만든다. 이 파일은 Higgsfield 가 막혔을 때
+# 쓰는 경로가 살아 있는지 본다. 그래서 제공자를 반드시 명시한다 —
+# 명시하지 않으면 기본값(Higgsfield)으로 진짜 API 를 부른다(실제로 겪었다).
+#
 # 진짜 API 를 부르지 않는다. 진짜 '응답 모양' 을 흉내낸 서버를 상대로 검증한다.
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,6 +33,8 @@ pass "시험용 서버 준비 ($PORT)"
 
 BASE="http://127.0.0.1:$PORT"
 export CF_API_BASE="$BASE" FAL_QUEUE_BASE="$BASE" CAMP_MEDIA_POLL_SEC=0.2
+# 이 파일의 모든 호출은 비상 경로를 향한다
+export CAMP_MEDIA_PROVIDER=fal
 export CAMP_MEDIA_KEYS="$TMP/none.env"
 
 sent_input() { curl -fsS "$BASE/last-input" 2>/dev/null; }
@@ -58,7 +65,7 @@ assert_contains "$IN" '"aspect_ratio": "16:9"' "발표 화면에 맞는 16:9"
 OUT2="$(bash "$S" --kind 대표 --prompt "campaign poster" --team-dir "$TEAM" 2>&1)"
 assert_eq "$?" "0" "대표 생성 성공"
 IN2="$(sent_input)"
-assert_contains "$IN2" '"resolution": "2K"' "대표는 2K"
+assert_contains "$IN2" '"resolution": "1K"' "비상 경로는 해상도도 고정"
 
 # --- 4) 영상: 큐를 기다렸다가 내려받는다. 길이는 고정 ---
 OUT3="$(bash "$S" --kind 영상 --prompt "ocean cleanup" --team-dir "$TEAM" 2>&1)"
@@ -78,10 +85,11 @@ assert_eq "$?" "0" "대표 그림도 막지 않음"
 
 # --- 6) 쓴 만큼 기록이 남는다 (막지 않는 대신 보이게 한다) ---
 assert_file "$TEAM/.camp/usage.log" "사용 기록 파일이 생김"
+# 기록은 크레딧 단위다 (평소 제공자가 Higgsfield 이므로)
 LOG="$(cat "$TEAM/.camp/usage.log")"
-assert_contains "$LOG" "0.400" "영상 단가가 기록됨"
-assert_contains "$LOG" "0.080" "그림 단가가 기록됨"
-assert_contains "$LOG" "0.120" "대표 단가가 기록됨"
+assert_contains "$LOG" "영상" "영상 사용이 기록됨"
+assert_contains "$LOG" "그림" "그림 사용이 기록됨"
+assert_contains "$LOG" "대표" "대표 사용이 기록됨"
 
 # --- 7) 실패는 기록하지 않는다 (돈이 안 나갔으니까) ---
 T2="$TMP/04조"; mkdir -p "$T2/assets"

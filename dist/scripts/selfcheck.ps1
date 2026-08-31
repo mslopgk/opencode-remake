@@ -140,58 +140,39 @@ function Test-DeepSeek {
     }
 }
 
-# 그림·영상 만들기 열쇠가 살아 있는지 본다.
+# 만들기가 연결되는지, 그리고 남은 크레딧이 얼마인지 본다.
 #
-# 그림을 실제로 만들어 보지 않는다. Nano Banana 2 는 한 장 $0.08 이라
-# 60명이 점검만 해도 5달러가 나간다.
-# 대신 fal 에 아무 열쇠나 통하지 않는 주소를 불러 본다.
-# 열쇠가 틀리면 401/403, 맞으면 그 외(404 등)가 온다 — 공짜다.
-function Get-CampMediaKey([string]$Name) {
-    $keyFile = Join-Path $env:USERPROFILE '.config\camp\media-keys.env'
-    if (-not (Test-Path -LiteralPath $keyFile -PathType Leaf)) { return $null }
-    foreach ($line in (Get-Content -LiteralPath $keyFile -Encoding UTF8)) {
-        if ($line.Trim() -match ('^\s*' + $Name + '\s*=\s*(.+)$')) {
-            return $Matches[1].Trim().Trim('"').Trim("'")
-        }
-    }
-    return $null
-}
-
+# 그림을 실제로 만들어 보지 않는다. 60명이 점검만 해도 60크레딧이 날아간다.
+# 계정 조회는 공짜다.
+#
+# 크레딧은 15팀이 나눠 쓰는 공유 자원이다. 횟수 제한을 두지 않았으므로
+# 바닥나면 그때부터 아무도 못 만든다. 그래서 남은 양을 반드시 보여 준다.
 function Test-MediaKeys {
     $fake = Get-FakeMode
-    if ($fake -eq 'ok' -or $fake -eq 'partial') { return @{ Ok = $true; Where = '(연습)' } }
-    if ($fake -eq 'fail') { return @{ Ok = $false; Where = '' } }
+    if ($fake -eq 'ok' -or $fake -eq 'partial') { return @{ Ok = $true; Credits = 999.0 } }
+    if ($fake -eq 'fail') { return @{ Ok = $false; Credits = 0.0 } }
 
-    $keyFile = Join-Path $env:USERPROFILE '.config\camp\media-keys.env'
-    if (-not (Test-Path -LiteralPath $keyFile -PathType Leaf)) {
-        return @{ Ok = $false; Where = '열쇠 파일이 없어요' }
-    }
-    $fal = Get-CampMediaKey 'FAL_KEY'
-    if (-not $fal) { return @{ Ok = $false; Where = '열쇠가 비어 있어요' } }
+    $cmd = Get-Command higgsfield -ErrorAction SilentlyContinue
+    if ($null -eq $cmd) { return @{ Ok = $false; Credits = 0.0 } }
 
+    # 5.1 에서 네이티브 exe 에 2>&1 을 쓰면 종료코드 0 에도 실패로 보인다(실측).
+    $out = Join-Path $env:TEMP ('hfstat-' + [guid]::NewGuid().ToString('N') + '.txt')
     try {
-        $req = [System.Net.HttpWebRequest]::Create('https://queue.fal.run/fal-ai/nano-banana-2/requests/camp-selfcheck-probe')
-        $req.Method = 'GET'
-        $req.Timeout = 15000
-        $req.Headers.Add('Authorization', 'Key ' + $fal)
-        try {
-            $resp = $req.GetResponse()
-            $resp.Close()
-            return @{ Ok = $true; Where = '' }      # 200 이면 당연히 통과
-        }
-        catch [System.Net.WebException] {
-            $r = $_.Exception.Response
-            if ($null -eq $r) { return @{ Ok = $false; Where = '인터넷이 안 돼요' } }
-            $code = [int]$r.StatusCode
-            $r.Close()
-            # 401/403 = 열쇠가 틀렸다. 그 밖(404 등)은 열쇠가 통했다는 뜻이다.
-            if ($code -eq 401 -or $code -eq 403) {
-                return @{ Ok = $false; Where = '열쇠가 맞지 않아요' }
-            }
-            return @{ Ok = $true; Where = '' }
-        }
+        $p = Start-Process -FilePath $cmd.Source -ArgumentList @('account', 'status') `
+                -PassThru -Wait -WindowStyle Hidden `
+                -RedirectStandardOutput $out -RedirectStandardError ($out + '.err')
+        if ($p.ExitCode -ne 0) { return @{ Ok = $false; Credits = 0.0 } }
+        $text = [string]::Join(' ', @(Get-Content -LiteralPath $out -Encoding UTF8 -ErrorAction SilentlyContinue))
+        $credits = 0.0
+        $m = [regex]::Match($text, '([0-9]+(\.[0-9]+)?)\s*credits')
+        if ($m.Success) { $credits = [double]$m.Groups[1].Value }
+        return @{ Ok = ($text -match 'credits'); Credits = $credits }
     }
-    catch { return @{ Ok = $false; Where = '인터넷이나 열쇠에 문제가 있어요' } }
+    catch { return @{ Ok = $false; Credits = 0.0 } }
+    finally {
+        Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath ($out + '.err') -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # 에이전트가 실행하는 도구가 실제로 있는지 확인한다.
@@ -256,12 +237,12 @@ function Invoke-SelfCheck {
 
     Write-Step '5/6 그림 만들기가 연결되는지 확인 중'
     $h = Test-MediaKeys
-    if ($h.Ok) { Write-Ok '그림 만들기가 연결됐어요' }
-    else {
-        if ($h.Where) { Write-Fail ('그림 만들기가 연결되지 않았어요 — ' + $h.Where) }
-        else { Write-Fail '그림 만들기가 연결되지 않았어요' }
-        $fails += '그림'
+    if ($h.Ok) {
+        Write-Ok ('그림 만들기가 연결됐어요 (남은 양 ' + $h.Credits + ')')
+        # 영상 한 편이 8, 그림 한 장이 1이다. 15팀이 나눠 쓴다.
+        if ($h.Credits -lt 300) { Write-Note '남은 양이 적어요. 선생님께 알려 주세요.' }
     }
+    else { Write-Fail '그림 만들기가 연결되지 않았어요'; $fails += '그림' }
 
     Write-Step '6/6 인터넷에 올리는 도구가 있는지 확인 중'
     if (Test-GithubCli) { Write-Ok '인터넷에 올리는 도구가 있어요' }

@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 # 단순 어서션 헬퍼. 외부 의존성 없음.
+
+# ── 안전장치: 테스트는 절대 진짜 API 를 부르지 않는다 ──────────────
+# 실제로 태운 적이 있다. 기본 제공자를 Higgsfield 로 바꾼 날,
+# 테스트가 진짜 CLI 를 불러 92크레딧(약 $4.50)이 날아갔다.
+# 모든 테스트가 이 파일을 source 하므로 여기서 한 번에 막는다.
+# tests/mock 을 PATH 맨 앞에 두면 higgsfield 는 가짜가 잡힌다.
+_CAMP_MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../mock" && pwd)"
+export PATH="$_CAMP_MOCK_DIR:$PATH"
+
 _PASS=0
 _FAIL=0
 
