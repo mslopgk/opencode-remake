@@ -150,20 +150,57 @@ elif [ "$PROVIDER" = "higgsfield" ]; then
     WAIT_ARGS="--wait"
   fi
 
-  ERR="$(mktemp)"
-  # shellcheck disable=SC2086
-  URL="$(higgsfield generate create "$MODEL" --prompt "$PROMPT" $WAIT_ARGS 2>"$ERR" | tail -1)"
-  MSG="$(cat "$ERR" 2>/dev/null)"
-  rm -f "$ERR"
+  # 동시 실행 한도에 걸리면 여기서 스스로 다시 해 본다.
+  #
+  # 실측: Plus 플랜은 concurrent_jobs_limit 이 8 이고, 넘으면 큐에 넣지 않고
+  # 즉시 거절한다(11초 만에 실패). 60명이 한 계정을 쓰므로 선생님이
+  # "이제 그림 만들어 보세요" 라고 말하는 순간 무더기로 걸린다.
+  # 거절은 크레딧을 먹지 않고 슬롯은 20초 안에 빈다. 학생에게 오류를
+  # 보여 주고 다시 누르게 하는 것보다 여기서 기다렸다 다시 하는 게 낫다.
+  # 60명이 한꺼번에 몰리는 최악의 경우까지 버티게 잡는다.
+  # 한도 8, 그림 한 장 22초면 60명이 빠지는 데 약 165초 걸린다.
+  # 12번 × (실패감지 11초 + 최대 20초 대기) ≈ 6분까지 버틴다.
+  ATTEMPT=0
+  MAX_ATTEMPT="${CAMP_MEDIA_RETRIES:-12}"
+  URL=""
+  while [ "$ATTEMPT" -lt "$MAX_ATTEMPT" ]; do
+    ATTEMPT=$((ATTEMPT + 1))
+    ERR="$(mktemp)"
+    # shellcheck disable=SC2086
+    URL="$(higgsfield generate create "$MODEL" --prompt "$PROMPT" $WAIT_ARGS 2>"$ERR" | tail -1)"
+    MSG="$(cat "$ERR" 2>/dev/null)"
+    rm -f "$ERR"
 
-  if [ -z "${URL:-}" ] || [ "${URL#http}" = "$URL" ]; then
-    # 크레딧이 바닥나는 것은 캠프 당일 실제로 일어날 수 있는 일이다.
-    # "잠시 뒤에 다시" 라고 하면 학생이 계속 다시 시도한다. 구분해서 알린다.
+    if [ -n "${URL:-}" ] && [ "${URL#http}" != "$URL" ]; then
+      break
+    fi
+
+    # 크레딧이 바닥난 것은 기다려도 안 된다. 바로 알린다.
     case "$MSG" in
       *credit*|*Credit*|*CREDIT*|*insufficient*|*balance*)
         echo "만들기 재료가 다 떨어졌어요. 선생님을 불러 주세요." >&2
         exit 7 ;;
     esac
+
+    # 동시 한도면 잠깐 기다렸다 다시 한다.
+    # 여러 명이 동시에 걸리므로 같은 시각에 몰려 재시도하지 않도록 흔든다.
+    case "$MSG" in
+      *rate_limit*|*concurrent*|*429*|*too\ many*|*Too\ Many*)
+        if [ "$ATTEMPT" -lt "$MAX_ATTEMPT" ]; then
+          # 대기는 20초에서 멈춘다. 계속 늘리면 마지막 학생이 너무 오래 기다린다.
+          BACKOFF=$(( ATTEMPT * 5 ))
+          [ "$BACKOFF" -gt 20 ] && BACKOFF=20
+          sleep "$(( BACKOFF + (RANDOM % 6) ))"
+          URL=""
+          continue
+        fi ;;
+    esac
+
+    URL=""
+    break
+  done
+
+  if [ -z "${URL:-}" ]; then
     echo "만들지 못했어요. 잠시 뒤에 다시 해 볼까요?" >&2
     exit 5
   fi

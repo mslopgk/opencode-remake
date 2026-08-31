@@ -92,4 +92,14 @@ assert_contains "$SRC" 'MODEL="veo3_1_lite"' "영상은 veo3_1_lite (8크레딧)
 assert_not_contains "$SRC" "seedance_2_5" "가장 비싼 영상 모델은 쓰지 않음"
 assert_contains "$SRC" "12m" "영상은 오래 기다려 준다"
 
+# --- 11) 동시 한도에 걸리면 스스로 다시 해 본다 ---
+# 실측: Plus 는 concurrent_jobs_limit 이 8 이고 넘으면 큐에 넣지 않고 즉시 거절한다.
+# 20명 동시에 11/20 만 성공했는데, 재시도를 넣으니 20/20 이 됐다(최장 57초).
+assert_contains "$SRC" "rate_limit" "동시 한도 오류를 알아본다"
+assert_contains "$SRC" "MAX_ATTEMPT" "재시도 횟수가 있다"
+assert_contains "$SRC" "RANDOM" "동시에 몰려 재시도하지 않게 흔든다"
+assert_contains "$SRC" "BACKOFF" "기다리는 시간을 늘려 간다"
+# 크레딧 소진은 기다려도 안 되므로 재시도하면 안 된다
+assert_contains "$SRC" "재료가 다 떨어졌어요" "크레딧 소진은 바로 알린다"
+
 summary
