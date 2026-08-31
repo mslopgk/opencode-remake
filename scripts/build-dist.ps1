@@ -88,8 +88,6 @@ function Test-DistComplete([string]$DistDir) {
     )
     $secretFiles = @(
         'secrets\auth.json',
-        'secrets\credentials.json',
-        'secrets\config.json',
         'secrets\media-keys.env'
     )
 

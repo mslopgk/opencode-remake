@@ -252,14 +252,10 @@ function Copy-PresetAndSecrets([string]$DistDir) {
         New-Item -ItemType Directory -Path $dst -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $sec 'auth.json') -Destination $dst -Force
     }
-    foreach ($f in @('credentials.json', 'config.json')) {
-        $src = Join-Path $sec $f
-        if (Test-Path -LiteralPath $src -PathType Leaf) {
-            $dst = Join-Path $env:USERPROFILE '.config\higgsfield'
-            New-Item -ItemType Directory -Path $dst -Force | Out-Null
-            Copy-Item -LiteralPath $src -Destination $dst -Force
-        }
-    }
+    # Higgsfield 자격증명은 더 이상 심지 않는다.
+    # 미디어를 Google Gemini API 직결로 옮겼으므로 쓰지 않고, 이 계정은
+    # 폐기 명령이 없어서(로그인·로그아웃·토큰 조회만 있다) 60대에 뿌리면
+    # 회수할 방법이 없다. 쓰지 않는 열쇠를 배포하지 않는다.
 
     # 그림·영상 만들기 열쇠 (Cloudflare / fal).
     # camp-media.sh 가 ~/.config/camp/media-keys.env 를 읽는다.
