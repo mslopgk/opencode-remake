@@ -43,6 +43,12 @@ function Get-ExeTargets {
             Title = '창의디자인캠프 점검'
             Load  = 'lib-log.ps1,lib-gui.ps1,selfcheck.ps1,gui-check.ps1'
             Call  = 'Show-CampChecker'
+        },
+        @{
+            Exe   = '깃허브 연결.exe'
+            Title = '창의디자인캠프 깃허브 연결'
+            Load  = 'lib-log.ps1,lib-gui.ps1,github-connect.ps1,gui-github.ps1'
+            Call  = 'Show-CampGithubConnect'
         }
     )
 }

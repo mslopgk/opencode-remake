@@ -1,4 +1,4 @@
-﻿# 점검 화면. 다섯 항목이 실시간으로 켜진다.
+﻿# 점검 화면. 여섯 항목이 실시간으로 켜진다.
 #
 # 검증된 selfcheck.ps1 의 Invoke-SelfCheck 를 그대로 호출한다.
 
@@ -30,8 +30,8 @@ function Show-CampChecker {
 
     $win = New-CampWindow -Title '창의디자인캠프 점검' `
         -Heading '잘 됐는지 확인해요' `
-        -Sub '다섯 가지를 하나씩 확인합니다. 1분쯤 걸려요.' `
-        -Width 600 -Height 420 -BodyXaml $body
+        -Sub '여섯 가지를 하나씩 확인합니다. 1분쯤 걸려요.' `
+        -Width 600 -Height 460 -BodyXaml $body
 
     $stepsHost = $win.FindName('Steps')
     $status    = $win.FindName('Status')
@@ -40,7 +40,8 @@ function Show-CampChecker {
     $subText   = $win.FindName('SubText')
 
     $titles = @('도구가 깔렸는지', '캠프 설정이 들어갔는지', '만들기 도구가 있는지',
-                'AI 도우미가 연결되는지', '그림 만들기가 연결되는지')
+                'AI 도우미가 연결되는지', '그림 만들기가 연결되는지',
+                '인터넷에 올리는 도구가 있는지')
     $rows = New-CampStepList -Panel $stepsHost -Titles $titles
 
     $map = @(
@@ -48,7 +49,8 @@ function Show-CampChecker {
         @{ Key = '캠프 설정';     Step = '캠프 설정이 들어갔는지' },
         @{ Key = '만들기 도구';   Step = '만들기 도구가 있는지' },
         @{ Key = 'AI 도우미';     Step = 'AI 도우미가 연결되는지' },
-        @{ Key = '그림 만들기';   Step = '그림 만들기가 연결되는지' }
+        @{ Key = '그림 만들기';   Step = '그림 만들기가 연결되는지' },
+        @{ Key = '인터넷에 올리는'; Step = '인터넷에 올리는 도구가 있는지' }
     )
 
     $shared = New-CampShared

@@ -29,7 +29,8 @@ $names = @()
 foreach ($s in (Get-BundleSources)) { $names += $s.Name }
 Assert-True ($names -contains 'opencode-windows-x64.zip') '번들에 standalone CLI 포함'
 Assert-True ($names -contains 'opencode-desktop-win-x64.exe') '번들에 데스크탑 앱 포함'
-Assert-Eq $names.Count 6 '번들 구성요소 6개'
+Assert-True ($names -contains 'gh-windows-amd64.zip') '번들에 인터넷에 올리는 도구 포함'
+Assert-True ($names.Count -ge 7) '번들 구성요소 7개 이상'
 
 # 모든 URL 이 https 인지
 foreach ($s in (Get-BundleSources)) {

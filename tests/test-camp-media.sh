@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# camp-media.sh 단위 테스트. mock higgsfield 를 써서 크레딧을 쓰지 않는다.
+# camp-media.sh 단위 테스트 — 제한·이름짓기·인자 검증.
+# 실제 제공자 호출은 test-media-providers.sh 가 가짜 서버로 검증한다.
+# 여기서는 CAMP_MEDIA_FAKE_DOWNLOAD 로 만들기를 건너뛰고 규칙만 본다.
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO/tests/lib/assert.sh"
@@ -15,40 +17,31 @@ export CAMP_MEDIA_FAKE_DOWNLOAD=1
 TEAM="$TMP/03조_지구지킴이"
 mkdir -p "$TEAM/assets"
 
-# --- 1) 기본 그림은 저가 모델을 쓴다 ---
-export MOCK_LOG="$TMP/log1"
-: > "$MOCK_LOG"
+# --- 1) 그림 ---
 OUT="$(bash "$SCRIPT" --kind 그림 --prompt "clean ocean illustration" --team-dir "$TEAM" 2>/dev/null)"
 assert_eq "$?" "0" "그림 생성이 성공"
 assert_contains "$OUT" "assets/" "출력이 assets 상대경로"
-assert_contains "$(cat "$MOCK_LOG")" "nano_banana_2_lite" "기본 그림은 nano_banana_2_lite(1크레딧)"
-assert_not_contains "$(cat "$MOCK_LOG")" "gpt_image_2" "기본 그림에 고가 모델을 쓰지 않음"
+assert_eq "$OUT" "assets/그림-1.png" "그림 이름에 번호가 붙음"
 
-# --- 2) 대표 이미지는 gpt_image_2, 팀당 2회 제한 ---
-export MOCK_LOG="$TMP/log2"
-: > "$MOCK_LOG"
-bash "$SCRIPT" --kind 대표 --prompt "campaign poster" --team-dir "$TEAM" >/dev/null 2>&1
-assert_contains "$(cat "$MOCK_LOG")" "gpt_image_2" "대표 이미지는 gpt_image_2"
-bash "$SCRIPT" --kind 대표 --prompt "poster 2" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "0" "대표 이미지 2회째는 허용"
-bash "$SCRIPT" --kind 대표 --prompt "poster 3" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "3" "대표 이미지 3회째는 거부 (exit 3)"
+# --- 2) 대표 그림은 팀당 6회까지 ---
+# 무료 제공자로 옮겨 단가가 거의 0 이 됐으므로 2회에서 6회로 늘렸다.
+# 그래도 한도를 두는 이유: 하루 무료량을 15팀이 나눠 쓴다.
+for i in 1 2 3 4 5 6; do
+  bash "$SCRIPT" --kind 대표 --prompt "poster $i" --team-dir "$TEAM" >/dev/null 2>&1
+done
+assert_eq "$?" "0" "대표 그림 6회째까지 허용"
+bash "$SCRIPT" --kind 대표 --prompt "poster 7" --team-dir "$TEAM" >/dev/null 2>&1
+assert_eq "$?" "3" "대표 그림 7회째는 거부 (exit 3)"
 
-# --- 3) 음악은 seed_audio, 제한 없음 ---
-export MOCK_LOG="$TMP/log3"
-: > "$MOCK_LOG"
+# --- 3) 음악은 제한 없음 ---
 for i in 1 2 3 4 5; do
   bash "$SCRIPT" --kind 음악 --prompt "gentle ocean bgm" --team-dir "$TEAM" >/dev/null 2>&1
 done
 assert_eq "$?" "0" "음악은 5회째도 허용"
-assert_contains "$(cat "$MOCK_LOG")" "seed_audio" "음악은 seed_audio(0.1크레딧)"
 
-# --- 4) 영상은 seedance_2_0, 팀당 2회 제한 ---
-export MOCK_LOG="$TMP/log4"
-: > "$MOCK_LOG"
+# --- 4) 영상은 팀당 2회 제한 (가장 비싸다) ---
 bash "$SCRIPT" --kind 영상 --prompt "ocean cleanup clip" --team-dir "$TEAM" >/dev/null 2>&1
 assert_eq "$?" "0" "영상 1회째 허용"
-assert_contains "$(cat "$MOCK_LOG")" "seedance_2_0" "영상은 seedance_2_0"
 bash "$SCRIPT" --kind 영상 --prompt "clip 2" --team-dir "$TEAM" >/dev/null 2>&1
 assert_eq "$?" "0" "영상 2회째 허용"
 bash "$SCRIPT" --kind 영상 --prompt "clip 3" --team-dir "$TEAM" >/dev/null 2>&1
@@ -72,19 +65,24 @@ assert_eq "$?" "4" "알 수 없는 kind 는 exit 4"
 bash "$SCRIPT" --kind 그림 --prompt "x" --team-dir "$TMP/없는팀" >/dev/null 2>&1
 assert_eq "$?" "4" "없는 팀 폴더는 exit 4"
 
-# --- 8) 생성 실패는 exit 5 와 한국어 메시지 ---
-export MOCK_FAIL=1
-ERR="$(bash "$SCRIPT" --kind 그림 --prompt "x" --team-dir "$TEAM" 2>&1 >/dev/null)"
-assert_eq "$?" "5" "생성 실패는 exit 5"
-assert_contains "$ERR" "만들지 못했어요" "실패 메시지가 한국어"
-unset MOCK_FAIL
+# --- 8) 열쇠가 없으면 만들지 않고 사람 말로 알린다 ---
+# (실제 실패 경로는 test-media-providers.sh 가 가짜 서버로 더 자세히 본다)
+TEAM3="$TMP/09조_실패시험"
+mkdir -p "$TEAM3/assets"
+ERR="$( unset CAMP_MEDIA_FAKE_DOWNLOAD
+        export CAMP_MEDIA_KEYS="$TMP/없는열쇠.env"
+        unset CF_ACCOUNT_ID CF_API_TOKEN
+        bash "$SCRIPT" --kind 그림 --prompt "x" --team-dir "$TEAM3" 2>&1 >/dev/null )"
+assert_eq "$?" "6" "열쇠가 없으면 exit 6"
+assert_contains "$ERR" "열쇠가 없어요" "실패 메시지가 한국어"
 
 # --- 9) 실패는 카운터를 늘리지 않는다 ---
-BEFORE="$(grep '^영상=' "$TEAM2/.camp/counts" | cut -d= -f2)"
-export MOCK_FAIL=1
-bash "$SCRIPT" --kind 영상 --prompt "x" --team-dir "$TEAM2" >/dev/null 2>&1
-unset MOCK_FAIL
-AFTER="$(grep '^영상=' "$TEAM2/.camp/counts" | cut -d= -f2)"
+BEFORE="$(grep '^영상=' "$TEAM2/.camp/counts" 2>/dev/null | cut -d= -f2)"
+( unset CAMP_MEDIA_FAKE_DOWNLOAD
+  export CAMP_MEDIA_KEYS="$TMP/없는열쇠.env"
+  unset FAL_KEY
+  bash "$SCRIPT" --kind 영상 --prompt "x" --team-dir "$TEAM2" >/dev/null 2>&1 )
+AFTER="$(grep '^영상=' "$TEAM2/.camp/counts" 2>/dev/null | cut -d= -f2)"
 assert_eq "$AFTER" "$BEFORE" "실패 시 영상 카운터가 늘지 않음"
 
 summary

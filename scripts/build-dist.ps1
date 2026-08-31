@@ -11,7 +11,7 @@ function Invoke-BuildDist([string]$RepoDir) {
 
     # 에이전트가 실행하는 도구들. 이게 학생 노트북에 없으면
     # /포스터·/음악·/영상·/합쳐줘 가 전부 실패한다 (실제로 겪음).
-    $toolNames = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py')
+    $toolNames = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py', 'camp-publish.sh', 'media-gen.py')
     $toolDst = Join-Path $RepoDir 'dist\tools'
     if (Test-Path -LiteralPath $toolDst) { Remove-Item -Recurse -Force $toolDst }
     New-Item -ItemType Directory -Path $toolDst -Force | Out-Null
@@ -52,9 +52,12 @@ function Test-DistComplete([string]$DistDir) {
         'tools\camp-media.sh',
         'tools\merge-slides.sh',
         'tools\merge-slides.py',
+        'tools\camp-publish.sh',
+        'tools\media-gen.py',
         '설치하기.cmd',
         '점검하기.cmd',
         '캠프시작.cmd',
+        '깃허브연결.cmd',
         'scripts\orchestrator.ps1',
         'scripts\selfcheck.ps1',
         'scripts\launcher.ps1',
@@ -62,10 +65,13 @@ function Test-DistComplete([string]$DistDir) {
         'scripts\gui-install.ps1',
         'scripts\gui-check.ps1',
         'scripts\gui-launcher.ps1',
+        'scripts\github-connect.ps1',
+        'scripts\gui-github.ps1',
         'scripts\camp.ico',
         '창의디자인캠프 설치.exe',
         '캠프 시작.exe',
-        '점검.exe'
+        '점검.exe',
+        '깃허브 연결.exe'
     )
     $bundleFiles = @(
         'bundle\opencode-desktop-win-x64.exe',
@@ -73,12 +79,14 @@ function Test-DistComplete([string]$DistDir) {
         'bundle\node-lts-x64.msi',
         'bundle\python-3.12-amd64.exe',
         'bundle\Git-64-bit.exe',
-        'bundle\CascadiaCode-NF.zip'
+        'bundle\CascadiaCode-NF.zip',
+        'bundle\gh-windows-amd64.zip'
     )
     $secretFiles = @(
         'secrets\auth.json',
         'secrets\credentials.json',
-        'secrets\config.json'
+        'secrets\config.json',
+        'secrets\media-keys.env'
     )
 
     $missing = @()

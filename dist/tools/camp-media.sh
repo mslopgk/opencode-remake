@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
 # 창의디자인캠프 미디어 생성 래퍼.
 #
-# 이 스크립트의 존재 이유: 크레딧 예산을 강제한다.
-# 계정 잔액은 유한하고 15팀이 공유한다. 프롬프트로 부탁하는 것으로는
-# 지켜지지 않으므로 여기서 기계적으로 막는다.
+# 이 스크립트의 존재 이유: 예산을 강제한다.
+# 프롬프트로 "아껴 써" 라고 부탁하는 것으로는 지켜지지 않으므로
+# 여기서 기계적으로 막는다.
+#
+# 제공자를 왜 나눴나 (실측 단가 기준):
+#   그림·대표 → Cloudflare Workers AI (FLUX.1 schnell)
+#       하루 10,000 뉴런 무료, 넘어가도 1,000 뉴런당 $0.011.
+#       한 장에 약 40~150 뉴런이라 캠프 전체를 다 써도 1달러가 안 된다.
+#   영상     → fal.ai (MiniMax H3) 초당 $0.08. 5초 한 편에 $0.40.
+#       팀당 2편 × 15팀 = 30편 ≈ $12.
+#   음악     → Higgsfield (seed_audio) 0.1 크레딧. 이미 사 둔 크레딧으로
+#       충분하고, 무료로 음악을 만들어 주는 곳이 마땅치 않다.
 #
 # 사용법:
 #   camp-media.sh --kind <그림|대표|음악|영상> --prompt <영어 프롬프트> \
 #                 --team-dir <팀폴더> [--name <파일이름>]
 #
 # 성공: 저장된 파일의 팀폴더 기준 상대경로를 stdout 에 한 줄 출력
-# 실패 exit 코드: 2=영상 초과, 3=대표 초과, 4=인자 오류, 5=생성 실패
+# 실패 exit 코드: 2=영상 초과, 3=대표 초과, 4=인자 오류, 5=생성 실패,
+#                 6=열쇠 없음
 set -uo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIND=""; PROMPT=""; TEAM_DIR=""; NAME=""
 
 while [ $# -gt 0 ]; do
@@ -30,14 +41,32 @@ done
 [ -n "$TEAM_DIR" ] || { echo "팀 폴더가 필요해요." >&2; exit 4; }
 [ -d "$TEAM_DIR" ] || { echo "팀 폴더를 찾을 수 없어요." >&2; exit 4; }
 
-# 종류별 모델·확장자·횟수 제한
+# 열쇠는 설치할 때 심어 둔다. 학생은 입력하지 않는다.
+KEYS_FILE="${CAMP_MEDIA_KEYS:-$HOME/.config/camp/media-keys.env}"
+if [ -f "$KEYS_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$KEYS_FILE"
+fi
+
+# 종류별 제공자·모델·확장자·횟수 제한
 case "$KIND" in
-  그림)  MODEL="nano_banana_2_lite"; EXT="png"; LIMIT_KEY=""     ; LIMIT=0 ;;
-  대표)  MODEL="gpt_image_2";        EXT="png"; LIMIT_KEY="대표"  ; LIMIT=2 ;;
-  음악)  MODEL="seed_audio";         EXT="wav"; LIMIT_KEY=""     ; LIMIT=0 ;;
-  영상)  MODEL="seedance_2_0";       EXT="mp4"; LIMIT_KEY="영상"  ; LIMIT=2 ;;
+  그림)
+    PROVIDER="cloudflare"; MODEL="@cf/black-forest-labs/flux-1-schnell"
+    EXT="png"; STEPS=4;  LIMIT_KEY="그림"; LIMIT=30 ;;
+  대표)
+    PROVIDER="cloudflare"; MODEL="@cf/black-forest-labs/flux-1-schnell"
+    EXT="png"; STEPS=8;  LIMIT_KEY="대표"; LIMIT=6 ;;
+  음악)
+    PROVIDER="higgsfield"; MODEL="seed_audio"
+    EXT="wav"; STEPS=0;  LIMIT_KEY="";    LIMIT=0 ;;
+  영상)
+    PROVIDER="fal"; MODEL="minimax/h3/text-to-video"
+    EXT="mp4"; STEPS=0;  LIMIT_KEY="영상"; LIMIT=2 ;;
   *) echo "만들 수 있는 것은 그림, 대표, 음악, 영상이에요." >&2; exit 4 ;;
 esac
+
+# 시험용으로 제공자를 갈아끼울 수 있게 한다 (실제 캠프에서는 쓰지 않는다)
+PROVIDER="${CAMP_MEDIA_PROVIDER:-$PROVIDER}"
 
 COUNT_DIR="$TEAM_DIR/.camp"
 COUNT_FILE="$COUNT_DIR/counts"
@@ -58,17 +87,15 @@ write_count() {
   mv "$tmp" "$COUNT_FILE"
 }
 
-# 횟수 제한 확인 (생성 전에 막는다)
+# 횟수 제한 확인 (만들기 전에 막는다)
 if [ -n "$LIMIT_KEY" ]; then
   USED="$(read_count "$LIMIT_KEY")"
   if [ "$USED" -ge "$LIMIT" ]; then
-    if [ "$LIMIT_KEY" = "영상" ]; then
-      echo "영상은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2
-      exit 2
-    else
-      echo "대표 그림은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2
-      exit 3
-    fi
+    case "$LIMIT_KEY" in
+      영상) echo "영상은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2; exit 2 ;;
+      대표) echo "대표 그림은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2; exit 3 ;;
+      *)    echo "그림은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2; exit 3 ;;
+    esac
   fi
 fi
 
@@ -88,29 +115,53 @@ case "$NAME" in *.*) ;; *) NAME="${NAME}.${EXT}" ;; esac
 REL="assets/$NAME"
 DEST="$TEAM_DIR/$REL"
 
-# 생성
-if [ "$KIND" = "영상" ]; then
-  URL="$(higgsfield generate create "$MODEL" --prompt "$PROMPT" \
-          --wait --wait-timeout 20m --wait-interval 5s 2>/dev/null | tail -1)"
-else
-  URL="$(higgsfield generate create "$MODEL" --prompt "$PROMPT" \
-          --wait 2>/dev/null | tail -1)"
-fi
-
-if [ -z "${URL:-}" ] || [ "${URL#http}" = "$URL" ]; then
-  echo "그림을 만들지 못했어요. 잠시 뒤에 다시 해 볼까요?" >&2
-  exit 5
-fi
-
-# 내려받기
+# ── 만들기 ──────────────────────────────────────────────────────
 if [ "${CAMP_MEDIA_FAKE_DOWNLOAD:-0}" = "1" ]; then
+  # 시험용. 실제로 부르지 않고 파일만 만든다.
   printf 'fake\n' > "$DEST"
-else
+elif [ "$PROVIDER" = "higgsfield" ]; then
+  URL="$(higgsfield generate create "$MODEL" --prompt "$PROMPT" --wait 2>/dev/null | tail -1)"
+  if [ -z "${URL:-}" ] || [ "${URL#http}" = "$URL" ]; then
+    echo "만들지 못했어요. 잠시 뒤에 다시 해 볼까요?" >&2
+    exit 5
+  fi
   if ! curl -fsSL "$URL" -o "$DEST" 2>/dev/null; then
-    echo "그림을 만들지 못했어요. 잠시 뒤에 다시 해 볼까요?" >&2
+    echo "만들지 못했어요. 잠시 뒤에 다시 해 볼까요?" >&2
     rm -f "$DEST"
     exit 5
   fi
+else
+  # Windows 에는 실행하면 "Microsoft Store 에서 설치하라" 고만 하는 가짜
+  # python3 가 PATH 에 있다(실측). 이름만 보지 말고 실제로 되는지 확인한다.
+  PY=""
+  for c in python py python3; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c "pass" >/dev/null 2>&1; then
+      PY="$c"; break
+    fi
+  done
+  if [ -z "$PY" ]; then
+    echo "만들기 도구가 없어요. 선생님을 불러 주세요." >&2
+    exit 5
+  fi
+  ERR="$(mktemp)"
+  if "$PY" "$HERE/media-gen.py" --provider "$PROVIDER" --model "$MODEL" \
+        --prompt "$PROMPT" --out "$DEST" --steps "$STEPS" 2>"$ERR"; then
+    rm -f "$ERR"
+  else
+    MSG="$(tail -1 "$ERR" 2>/dev/null)"
+    rm -f "$ERR" "$DEST"
+    case "$MSG" in
+      *열쇠가\ 없어요*) echo "${MSG}" >&2; exit 6 ;;
+      *) echo "${MSG:-만들지 못했어요. 잠시 뒤에 다시 해 볼까요?}" >&2; exit 5 ;;
+    esac
+  fi
+fi
+
+# 파일이 실제로 생겼는지 본다
+if [ ! -s "$DEST" ]; then
+  rm -f "$DEST"
+  echo "만들지 못했어요. 잠시 뒤에 다시 해 볼까요?" >&2
+  exit 5
 fi
 
 # 성공했을 때만 카운터를 올린다

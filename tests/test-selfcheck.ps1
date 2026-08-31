@@ -11,10 +11,10 @@ try {
     $p = Test-PresetLoaded -Port 4321
     Assert-True $p.Ok '가짜 모드: 프리셋 통과'
     Assert-Eq $p.Agents 4 '가짜 모드: 에이전트 4'
-    Assert-Eq $p.Commands 11 '가짜 모드: 명령어 11'
+    Assert-Eq $p.Commands 12 '가짜 모드: 명령어 12'
     Assert-True (Test-DeepSeek) '가짜 모드: DeepSeek 통과'
-    $h = Test-Higgsfield
-    Assert-True $h.Ok '가짜 모드: Higgsfield 통과'
+    $h = Test-MediaKeys
+    Assert-True $h.Ok '가짜 모드: 그림 만들기 열쇠 통과'
     Assert-True (Test-CampTools).Ok '가짜 모드: 만들기 도구 통과'
 }
 finally { Remove-Item Env:\CAMP_SELFCHECK_FAKE -ErrorAction SilentlyContinue }
@@ -25,7 +25,7 @@ try {
     Assert-Eq (Test-OpencodeVersion -Expected '1.18.20') $false '가짜 모드: 버전 실패'
     Assert-Eq (Test-PresetLoaded -Port 4321).Ok $false '가짜 모드: 프리셋 실패'
     Assert-Eq (Test-DeepSeek) $false '가짜 모드: DeepSeek 실패'
-    Assert-Eq (Test-Higgsfield).Ok $false '가짜 모드: Higgsfield 실패'
+    Assert-Eq (Test-MediaKeys).Ok $false '가짜 모드: 그림 만들기 열쇠 실패'
     Assert-Eq (Test-CampTools).Ok $false '가짜 모드: 만들기 도구 실패'
 }
 finally { Remove-Item Env:\CAMP_SELFCHECK_FAKE -ErrorAction SilentlyContinue }

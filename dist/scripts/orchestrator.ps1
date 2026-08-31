@@ -69,6 +69,10 @@ function Test-ComponentInstalled([string]$Kind, [string]$File) {
         $exe = Join-Path $env:LOCALAPPDATA 'Programs\@opencode-aidesktop\OpenCode.exe'
         return (Test-Path -LiteralPath $exe -PathType Leaf)
     }
+    if ($Kind -eq 'ghzip') {
+        $exe = Join-Path $env:LOCALAPPDATA 'Programs\gh-cliin\gh.exe'
+        return (Test-Path -LiteralPath $exe -PathType Leaf)
+    }
     if ($Kind -eq 'clizip') {
         $exe = Join-Path $env:LOCALAPPDATA 'Programs\opencode-cli\opencode.exe'
         return (Test-Path -LiteralPath $exe -PathType Leaf)
@@ -83,7 +87,8 @@ function Get-InstallPlan([string]$BundleDir) {
         @{ Name = 'Git';                        File = 'Git-64-bit.exe';              Kind = 'exe';    Args = @('/VERYSILENT', '/NORESTART', '/NOCANCEL') },
         @{ Name = '글꼴';                       File = 'CascadiaCode-NF.zip';         Kind = 'font';   Args = @() },
         @{ Name = '캠프 앱';                    File = 'opencode-desktop-win-x64.exe'; Kind = 'exe';   Args = @('/S') },
-        @{ Name = '점검용 도구';                File = 'opencode-windows-x64.zip';    Kind = 'clizip'; Args = @() }
+        @{ Name = '점검용 도구';                File = 'opencode-windows-x64.zip';    Kind = 'clizip'; Args = @() },
+        @{ Name = '인터넷에 올리는 도구';       File = 'gh-windows-amd64.zip';        Kind = 'ghzip';  Args = @() }
     )
 
     $plan = @()
@@ -159,6 +164,54 @@ function Install-OpencodeCli([string]$ZipPath) {
     }
 }
 
+function Install-GithubCli([string]$ZipPath) {
+    # 발표자료를 인터넷에 올릴 때 쓴다.
+    # 관리자 권한을 피하려고 MSI 가 아니라 zip 을 쓴다. 학생 노트북에서
+    # 관리자 암호를 물으면 거기서 설치가 멈춘다.
+    $dest = Join-Path $env:LOCALAPPDATA 'Programs\gh-cli'
+    if (Test-Path -LiteralPath $dest) { Remove-Item -Recurse -Force $dest }
+    $tmp = Join-Path $env:TEMP ('ghcli-' + [guid]::NewGuid().ToString('N'))
+    try {
+        Expand-ZipTo -ZipPath $ZipPath -Dest $tmp
+        $exe = Get-ChildItem -LiteralPath $tmp -Recurse -Filter 'gh.exe' -File | Select-Object -First 1
+        if ($null -eq $exe) { return $false }
+        New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        # zip 안의 구조(bin\, share\)를 통째로 옮긴다
+        $root = $exe.Directory.Parent
+        if ($null -eq $root) { $root = $exe.Directory }
+        Copy-Item -Path (Join-Path $root.FullName '*') -Destination $dest -Recurse -Force
+        $ghExe = Join-Path $dest 'bin\gh.exe'
+        if (-not (Test-Path -LiteralPath $ghExe -PathType Leaf)) { return $false }
+        Add-CampUserPath (Join-Path $dest 'bin')
+        return $true
+    }
+    finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
+}
+
+# 사용자 PATH 에 폴더 하나를 추가한다 (per-user, 관리자 권한 불필요).
+# setx 는 값을 자르거나 확장해버릴 수 있으므로 레지스트리를 직접 쓴다.
+function Add-CampUserPath([string]$Dir) {
+    $key = 'HKCU:\Environment'
+    $current = ''
+    try {
+        $current = [string](Get-ItemProperty -Path $key -Name 'Path' -ErrorAction Stop).Path
+    } catch { $current = '' }
+
+    $parts = @()
+    if ($current) { $parts = @($current -split ';' | Where-Object { $_ -ne '' }) }
+    if ($parts -notcontains $Dir) {
+        $newPath = (@($parts) + @($Dir)) -join ';'
+        Set-ItemProperty -Path $key -Name 'Path' -Value $newPath
+    }
+
+    # 이번 프로세스에서도 바로 쓰이도록 넣어준다 (앱은 다음 실행 때 상속)
+    if (($env:PATH -split ';') -notcontains $Dir) {
+        $env:PATH = $env:PATH + ';' + $Dir
+    }
+}
+
 # 에이전트가 실행하는 도구를 설치하고 사용자 PATH 에 등록한다.
 #
 # 이게 없으면 /포스터·/음악·/영상·/합쳐줘 가 전부 실패한다.
@@ -173,25 +226,7 @@ function Install-CampTools([string]$DistDir) {
     }
     Copy-Item -Path (Join-Path $src '*') -Destination $dst -Force
 
-    # 사용자 PATH 에 추가 (per-user, 관리자 권한 불필요).
-    # setx 는 값을 자르거나 확장해버릴 수 있으므로 레지스트리를 직접 쓴다.
-    $key = 'HKCU:\Environment'
-    $current = ''
-    try {
-        $current = [string](Get-ItemProperty -Path $key -Name 'Path' -ErrorAction Stop).Path
-    } catch { $current = '' }
-
-    $parts = @()
-    if ($current) { $parts = @($current -split ';' | Where-Object { $_ -ne '' }) }
-    if ($parts -notcontains $dst) {
-        $newPath = (@($parts) + @($dst)) -join ';'
-        Set-ItemProperty -Path $key -Name 'Path' -Value $newPath
-    }
-
-    # 이번 프로세스에서도 바로 쓰이도록 넣어준다 (앱은 다음 실행 때 상속)
-    if (($env:PATH -split ';') -notcontains $dst) {
-        $env:PATH = $env:PATH + ';' + $dst
-    }
+    Add-CampUserPath $dst
 
     return (Test-Path -LiteralPath (Join-Path $dst 'camp-media.sh') -PathType Leaf)
 }
@@ -224,6 +259,15 @@ function Copy-PresetAndSecrets([string]$DistDir) {
             New-Item -ItemType Directory -Path $dst -Force | Out-Null
             Copy-Item -LiteralPath $src -Destination $dst -Force
         }
+    }
+
+    # 그림·영상 만들기 열쇠 (Cloudflare / fal).
+    # camp-media.sh 가 ~/.config/camp/media-keys.env 를 읽는다.
+    $keys = Join-Path $sec 'media-keys.env'
+    if (Test-Path -LiteralPath $keys -PathType Leaf) {
+        $dst = Join-Path $env:USERPROFILE '.config\camp'
+        New-Item -ItemType Directory -Path $dst -Force | Out-Null
+        Copy-Item -LiteralPath $keys -Destination $dst -Force
     }
 }
 
@@ -264,6 +308,12 @@ function Invoke-Install {
 
         if ($step.Kind -eq 'font') {
             Install-Font -ZipPath $step.Path
+        }
+        elseif ($step.Kind -eq 'ghzip') {
+            if (-not (Install-GithubCli -ZipPath $step.Path)) {
+                Write-Fail ($step.Name + ' 설치에 실패했어요.')
+                return 1
+            }
         }
         elseif ($step.Kind -eq 'clizip') {
             if (-not (Install-OpencodeCli -ZipPath $step.Path)) {

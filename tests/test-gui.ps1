@@ -90,7 +90,8 @@ foreach ($n in @('설치하기.cmd', '캠프시작.cmd', '점검하기.cmd')) {
 # ── build-exe 의 대상이 실제 함수를 가리키는가 ───────────────────────────────
 . "$Repo\scripts\build-exe.ps1"
 $targets = Get-ExeTargets
-Assert-Eq $targets.Count 3 'exe 대상 3개'
+Assert-True ($targets.Count -ge 4) 'exe 대상 4개 이상'
+Assert-True (@($targets | Where-Object { $_.Exe -eq '깃허브 연결.exe' }).Count -eq 1) '깃허브 연결 진입점 존재'
 foreach ($tg in $targets) {
     foreach ($f in ($tg.Load -split ',')) {
         Assert-FileExists (Join-Path $Repo ('dist\scripts\' + $f)) ('로드 대상 존재: ' + $f)
