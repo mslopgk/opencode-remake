@@ -59,6 +59,7 @@ function Test-DistComplete([string]$DistDir) {
         '점검하기.cmd',
         '캠프시작.cmd',
         '깃허브연결.cmd',
+        '발표자료보기.cmd',
         'scripts\orchestrator.ps1',
         'scripts\selfcheck.ps1',
         'scripts\launcher.ps1',
@@ -68,11 +69,13 @@ function Test-DistComplete([string]$DistDir) {
         'scripts\gui-launcher.ps1',
         'scripts\github-connect.ps1',
         'scripts\gui-github.ps1',
+        'scripts\slides-viewer.ps1',
         'scripts\camp.ico',
         '창의디자인캠프 설치.exe',
         '캠프 시작.exe',
         '점검.exe',
-        '깃허브 연결.exe'
+        '깃허브 연결.exe',
+        '발표자료 보기.exe'
     )
     $bundleFiles = @(
         'bundle\opencode-desktop-win-x64.exe',

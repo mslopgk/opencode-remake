@@ -8,3 +8,7 @@ dist/template/
 # 빌드 산출물 (make-icon / build-exe 로 재생성)
 dist/*.exe
 dist/scripts/camp.ico
+
+# 원클릭 설치 파일 — 362MB 이고 안에 API 열쇠가 들어 있다.
+# build-installer-exe.ps1 로 재생성한다. 절대 커밋하지 않는다.
+camp2026-setup.exe

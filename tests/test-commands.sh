@@ -4,7 +4,7 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO/tests/lib/assert.sh"
 
-CMDS="시작 아이디어 포스터 음악 영상 슬라이드추가 보여줘 발표연습 제출 도와줘 합쳐줘"
+CMDS="시작 아이디어 포스터 영상 슬라이드추가 보여줘 발표연습 제출 도와줘 합쳐줘 올리기"
 VALID_AGENTS="도우미 아이디어 디자이너 미디어"
 
 for c in $CMDS; do
@@ -55,7 +55,7 @@ assert_not_contains "$M" "주석 바로 아래에 넣어라" "/합쳐줘 가 직
 
 # 도구를 쓰는 명령어·스킬은 PATH 에 의존하면 안 된다
 # (실측: opencode 의 bash 가 보는 PATH 에 도구가 없어 에이전트가 디스크를 헤맸다)
-for f in "$REPO"/camp-preset/command/포스터.md "$REPO"/camp-preset/command/음악.md          "$REPO"/camp-preset/command/영상.md "$REPO"/camp-preset/skills/media-generation/SKILL.md; do
+for f in "$REPO"/camp-preset/command/포스터.md           "$REPO"/camp-preset/command/영상.md "$REPO"/camp-preset/skills/media-generation/SKILL.md; do
   [ -e "$f" ] || continue
   BODY2="$(cat "$f")"
   assert_contains "$BODY2" "camp-tools" "절대경로 사용: $(basename "$f")"

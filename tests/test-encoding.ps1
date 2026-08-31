@@ -38,4 +38,30 @@ foreach ($cmd in $cmds) {
     Assert-Contains $text 'ExecutionPolicy Bypass' ('실행정책 우회: ' + $cmd.Name)
 }
 
+
+# ── 제어문자 검사 ────────────────────────────────────────────────
+# 실측 사고: gh 실행파일 경로의 "bin" 앞 구분자가 백스페이스 문자로
+# 바뀌어 들어가서 Test-Path 가 "Illegal characters in path" 를 냈다.
+# 그런데 폴백 덕에 점검은 초록불이 나와서 놓치기 쉬웠다.
+# 눈에 보이지 않는 문자이므로 기계로 잡는다.
+# (원인: 파이썬으로 파일을 쓸 때 이스케이프가 제어문자로 해석됐다)
+$ctrlBad = @(7, 8, 11, 12, 0)   # BEL, BS, VT, FF, NUL
+$ctrlExt = @('.ps1', '.sh', '.py')
+$ctrlFiles = @()
+foreach ($d in @('dist/scripts', 'scripts', 'tests')) {
+    $dir = Join-Path $Repo $d
+    if (-not (Test-Path -LiteralPath $dir)) { continue }
+    $ctrlFiles += Get-ChildItem -LiteralPath $dir -File -Recurse -ErrorAction SilentlyContinue |
+                  Where-Object { $ctrlExt -contains $_.Extension.ToLower() }
+}
+$ctrlHits = @()
+foreach ($f in $ctrlFiles) {
+    $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+    foreach ($b in $bytes) {
+        if ($ctrlBad -contains [int]$b) { $ctrlHits += $f.Name; break }
+    }
+}
+if ($ctrlHits.Count -eq 0) { Assert-Pass ('제어문자 없음 (' + $ctrlFiles.Count + '개 검사)') }
+else { Assert-Failure ('제어문자가 섞인 파일: ' + (($ctrlHits | Sort-Object -Unique) -join ', ')) }
+
 if (Test-Summary) { exit 0 } else { exit 1 }

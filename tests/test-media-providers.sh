@@ -52,7 +52,7 @@ export FAL_KEY="testfalkey" CF_ACCOUNT_ID="abc123account" CF_API_TOKEN="testtoke
 # --- 2) 그림: Nano Banana 2 로 진짜 PNG 를 받아 저장한다 ---
 OUT="$(bash "$S" --kind 그림 --prompt "clean ocean illustration" --team-dir "$TEAM" 2>&1)"
 assert_eq "$?" "0" "그림 생성 성공"
-assert_eq "$OUT" "assets/그림-1.png" "상대경로 출력"
+assert_eq "$OUT" "assets/그림-1.jpg" "상대경로 출력"
 HDR="$(head -c 4 "$TEAM/$OUT" | od -An -tx1 | tr -d ' \n')"
 assert_eq "$HDR" "89504e47" "진짜 PNG 로 저장"
 

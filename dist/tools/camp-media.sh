@@ -9,26 +9,28 @@
 # 있게 한다 (<팀폴더>/.camp/usage.log).
 #
 # 제공자를 왜 나눴나 (실측 단가 기준):
-# 전부 Higgsfield 한 곳으로 모았다. 이유:
+# 전부 Google Gemini API 를 직접 쓴다. 이유:
 #
-#   1) 한글이 된다. 여러 모델을 같은 프롬프트로 실제 생성해 비교했는데,
-#      Cloudflare 계열은 "바다를 지켜요" 가 "자근 뾽난 끠나끸힐" 로 나왔다.
-#      Nano Banana 2 는 정확히 썼다. 캠페인 포스터에 한글이 들어가야 하므로
-#      이게 결정적이었다.
-#   2) 화질이 다르다. 2048x2048 로 나온다 (Cloudflare 는 1024).
-#   3) 열쇠가 필요 없다. 자격증명이 이미 설치본에 들어 있다.
-#      Cloudflare·fal 로 가면 새 계정과 새 열쇠를 학생 노트북마다 심어야 한다.
-#   4) 지출 상한이 구조적으로 생긴다. 횟수 제한을 없앴으므로 종량제는
-#      상한이 없지만, 구독 크레딧은 다 쓰면 거기서 멈춘다.
+#   1) 같은 모델이 가장 싸다. Nano Banana 도 Veo 도 구글이 만든 것이고,
+#      제3사(fal·Higgsfield)는 여기에 마진을 얹어 되판다.
+#      그림 한 장: 구글 $0.0336 / Higgsfield $0.043 / fal $0.08
+#      영상 5초 : 구글 $0.25   / Higgsfield $0.34   / fal $0.40
+#   2) 동시 실행 한도가 없다. 분당 요청수(RPM)와 10분당 지출로 관리한다.
+#      Higgsfield 는 계정당 동시 8개라 60명이 몰리면 즉시 거절당했다
+#      (20명 동시에 11/20 실패). 구글 Tier 2 는 10분당 $50 이라
+#      60명이 각자 영상 3편을 동시에 만들어도 들어간다($45).
+#   3) 쓴 만큼만 낸다. 구독은 적게 써도 정액이었다.
 #
-# 단가 (Ultra 기준 크레딧당 약 $0.043):
-#   그림 nano_banana_2_lite   1 크레딧
-#   대표 nano_banana_2        2 크레딧   ← 한글 글자를 넣을 수 있다
-#   음악 seed_audio         0.2 크레딧
-#   영상 veo3_1_lite          8 크레딧   (5초)
+# 단가와 고정값:
+#   그림 gemini-3.1-flash-lite-image  1K   $0.0336
+#   대표 gemini-3.1-flash-image       2K   $0.101   ← 한글 글자를 정확히 쓴다
+#   영상 veo-3.1-lite-generate-preview 4초 720p $0.20
 #
-# 비상 경로는 남겨 뒀다. Higgsfield 가 막히면 CAMP_MEDIA_PROVIDER 로
-# cloudflare 나 fal 로 넘길 수 있다 (그쪽 열쇠가 있을 때만 동작한다).
+# 음악은 뺐다. Gemini API 에 음악 생성 모델이 없고, Veo 가 영상에 소리를
+# 같이 만들어 준다.
+#
+# 비상 경로(Higgsfield·fal·Cloudflare)는 남겨 뒀다. CAMP_MEDIA_PROVIDER 로
+# 넘긴다. 그쪽 열쇠가 있을 때만 동작한다.
 #
 # 사용법:
 #   camp-media.sh --kind <그림|대표|음악|영상> --prompt <영어 프롬프트> \
@@ -61,6 +63,12 @@ KEYS_FILE="${CAMP_MEDIA_KEYS:-$HOME/.config/camp/media-keys.env}"
 if [ -f "$KEYS_FILE" ]; then
   # shellcheck disable=SC1090
   . "$KEYS_FILE"
+  # source 만 하면 셸 변수로만 남고 자식 프로세스(python)에는 안 넘어간다.
+  # 실제로 "열쇠가 없어요" 로 실패했다. 반드시 export 한다.
+  for k in GEMINI_API_KEY CF_ACCOUNT_ID CF_API_TOKEN FAL_KEY; do
+    eval "v=\${$k:-}"
+    [ -n "$v" ] && export "$k=$v"
+  done
 fi
 
 # 종류별 모델·확장자·크레딧.
@@ -71,23 +79,26 @@ fi
 # 한 편당 상한이다. 실측으로 추정치와 실제 차감이 일치함을 확인했다.
 case "$KIND" in
   그림)
-    PROVIDER="higgsfield"; MODEL="nano_banana_2_lite"
-    EXT="png"; STEPS=0; CREDITS="1"; EXTRA='' ;;
+    PROVIDER="google"; MODEL="gemini-3.1-flash-lite-image"
+    EXT="jpg"; SIZE="1K"; ASPECT="16:9"; SECS=0; RES=""
+    CREDITS="0.0336"; EXTRA='' ;;
   대표)
-    # 캠페인 포스터. 한글 글자를 정확히 써 주는 모델이라 이것만 정식판을 쓴다.
-    PROVIDER="higgsfield"; MODEL="nano_banana_2"
-    EXT="png"; STEPS=0; CREDITS="2"; EXTRA='' ;;
-  음악)
-    PROVIDER="higgsfield"; MODEL="seed_audio"
-    EXT="wav"; STEPS=0; CREDITS="0.2"; EXTRA='' ;;
+    # 캠페인 포스터. 한글을 정확히 쓰는 모델이고 이 한 장만 2K 로 뽑는다.
+    PROVIDER="google"; MODEL="gemini-3.1-flash-image"
+    EXT="jpg"; SIZE="2K"; ASPECT="16:9"; SECS=0; RES=""
+    CREDITS="0.101"; EXTRA='' ;;
   영상)
-    PROVIDER="higgsfield"; MODEL="veo3_1_lite"
-    EXT="mp4"; STEPS=0; CREDITS="8"; EXTRA='' ;;
-  *) echo "만들 수 있는 것은 그림, 대표, 음악, 영상이에요." >&2; exit 4 ;;
+    PROVIDER="google"; MODEL="veo-3.1-lite-generate-preview"
+    EXT="mp4"; SIZE=""; ASPECT="16:9"; SECS=4; RES="720p"
+    CREDITS="0.200"; EXTRA='' ;;
+  *) echo "만들 수 있는 것은 그림, 대표, 영상이에요." >&2; exit 4 ;;
 esac
 
 # 제공자를 갈아끼울 수 있게 한다 (시험용 + 당일 비상용).
 # 그쪽 열쇠가 media-keys.env 에 있을 때만 동작한다. 평소에는 쓰지 않는다.
+# 비상 경로는 이 값들을 안 정할 수 있으니 기본값을 채운다
+STEPS="${STEPS:-4}"; SIZE="${SIZE:-1K}"; ASPECT="${ASPECT:-16:9}"
+RES="${RES:-720p}"; SECS="${SECS:-4}"
 PROVIDER="${CAMP_MEDIA_PROVIDER:-$PROVIDER}"
 case "$PROVIDER" in
   cloudflare)
@@ -224,7 +235,10 @@ else
   fi
   ERR="$(mktemp)"
   if "$PY" "$HERE/media-gen.py" --provider "$PROVIDER" --model "$MODEL" \
-        --prompt "$PROMPT" --out "$DEST" --steps "$STEPS" --extra "$EXTRA" 2>"$ERR"; then
+        --prompt "$PROMPT" --out "$DEST" --kind "$KIND" \
+        --steps "$STEPS" --extra "$EXTRA" \
+        --seconds "$SECS" --size "$SIZE" \
+        --aspect "$ASPECT" --resolution "$RES" 2>"$ERR"; then
     rm -f "$ERR"
   else
     MSG="$(tail -1 "$ERR" 2>/dev/null)"

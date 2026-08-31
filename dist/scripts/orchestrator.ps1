@@ -70,7 +70,7 @@ function Test-ComponentInstalled([string]$Kind, [string]$File) {
         return (Test-Path -LiteralPath $exe -PathType Leaf)
     }
     if ($Kind -eq 'ghzip') {
-        $exe = Join-Path $env:LOCALAPPDATA 'Programs\gh-cliin\gh.exe'
+        $exe = Join-Path $env:LOCALAPPDATA 'Programs\gh-cli\bin\gh.exe'
         return (Test-Path -LiteralPath $exe -PathType Leaf)
     }
     if ($Kind -eq 'clizip') {

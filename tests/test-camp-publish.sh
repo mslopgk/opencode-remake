@@ -71,7 +71,7 @@ assert_eq "$?" "5" "assets 안의 열쇠도 잡아냄"
 
 # 그림 파일(이진)은 오탐하지 않아야 한다
 T="$(make_team "$TMP/binok")"
-printf '\x89PNG\r\n\x1a\n' > "$T/assets/그림-1.png"
+printf '\x89PNG\r\n\x1a\n' > "$T/assets/그림-1.jpg"
 PATH="$FAKE:$PATH" make_fake_gh 1
 PATH="$FAKE:$PATH" bash "$S" --team-dir "$T" >/dev/null 2>&1
 assert_eq "$?" "2" "그림이 있어도 열쇠로 오해하지 않음"
@@ -101,14 +101,14 @@ else pass "--check 는 아무것도 만들지 않음"; fi
 T="$(make_team "$TMP/go" 12)"
 make_fake_gh 0; make_fake_git
 printf '<section class="slide"><h2>내 장</h2></section>\n' > "$T/slides/1번친구.html"
-printf 'fake\n' > "$T/assets/포스터-1.png"
+printf 'fake\n' > "$T/assets/포스터-1.jpg"
 OUT="$(PATH="$FAKE:$PATH" bash "$S" --team-dir "$T" 2>/dev/null)"
 assert_eq "$?" "0" "올리기 성공"
 assert_eq "$OUT" "https://학부모계정.github.io/camp2026-team12/" "공개 주소 출력"
 
 P="$T/.camp/publish"
 assert_file "$P/index.html" "발표자료를 올림"
-assert_file "$P/assets/포스터-1.png" "만든 그림을 올림"
+assert_file "$P/assets/포스터-1.jpg" "만든 그림을 올림"
 assert_file "$P/.nojekyll" "파일 이름이 바뀌지 않게 표시"
 
 # 올리면 안 되는 것들 — 개인정보와 내부 기록

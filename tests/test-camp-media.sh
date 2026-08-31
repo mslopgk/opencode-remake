@@ -21,19 +21,13 @@ mkdir -p "$TEAM/assets"
 OUT="$(bash "$SCRIPT" --kind 그림 --prompt "clean ocean illustration" --team-dir "$TEAM" 2>/dev/null)"
 assert_eq "$?" "0" "그림 생성이 성공"
 assert_contains "$OUT" "assets/" "출력이 assets 상대경로"
-assert_eq "$OUT" "assets/그림-1.png" "그림 이름에 번호가 붙음"
+assert_eq "$OUT" "assets/그림-1.jpg" "그림 이름에 번호가 붙음"
 
 # --- 2) 횟수 제한 없음 (주최측 결정: 학생을 막지 않는다) ---
 for i in 1 2 3 4 5 6 7 8; do
   bash "$SCRIPT" --kind 대표 --prompt "poster $i" --team-dir "$TEAM" >/dev/null 2>&1
 done
 assert_eq "$?" "0" "대표 그림을 여러 번 만들어도 막지 않음"
-
-# --- 3) 음악은 제한 없음 ---
-for i in 1 2 3 4 5; do
-  bash "$SCRIPT" --kind 음악 --prompt "gentle ocean bgm" --team-dir "$TEAM" >/dev/null 2>&1
-done
-assert_eq "$?" "0" "음악은 5회째도 허용"
 
 # --- 4) 영상도 횟수 제한 없음. 모델과 길이만 고정한다 ---
 for i in 1 2 3; do
@@ -86,10 +80,12 @@ assert_eq "$AFTER" "$BEFORE" "실패 시 영상 카운터가 늘지 않음"
 
 # --- 10) 모델과 길이가 코드에 고정돼 있다 ---
 SRC="$(cat "$SCRIPT")"
-assert_contains "$SRC" 'MODEL="nano_banana_2_lite"' "그림은 nano_banana_2_lite (1크레딧)"
-assert_contains "$SRC" 'MODEL="nano_banana_2"' "대표는 nano_banana_2 (한글이 된다)"
-assert_contains "$SRC" 'MODEL="veo3_1_lite"' "영상은 veo3_1_lite (8크레딧)"
-assert_not_contains "$SRC" "seedance_2_5" "가장 비싼 영상 모델은 쓰지 않음"
+# 구글 직결. 같은 모델을 제3사보다 싸게 쓴다 (그림 $0.0336 / 영상 $0.20)
+assert_contains "$SRC" 'MODEL="gemini-3.1-flash-lite-image"' "그림은 Nano Banana 2 Lite"
+assert_contains "$SRC" 'MODEL="gemini-3.1-flash-image"' "대표는 Nano Banana 2 (한글이 된다)"
+assert_contains "$SRC" 'MODEL="veo-3.1-lite-generate-preview"' "영상은 Veo 3.1 Lite"
+assert_contains "$SRC" 'PROVIDER="google"' "제공자는 구글 직결"
+assert_not_contains "$SRC" 'PROVIDER="higgsfield"; MODEL="nano' "힉스필드 이미지를 더 쓰지 않음"
 assert_contains "$SRC" "12m" "영상은 오래 기다려 준다"
 
 # --- 11) 동시 한도에 걸리면 스스로 다시 해 본다 ---

@@ -179,6 +179,121 @@ def fal(model, prompt, out, extra):
         f.write(데이터)
 
 
+
+def google_image(model, prompt, out, size, aspect):
+    """Gemini 이미지 생성. 그림은 base64 로 온다."""
+    열쇠 = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not 열쇠:
+        실패("그림 만들기 열쇠가 없어요.")
+    ascii확인(열쇠, "그림 만들기 열쇠")
+
+    바탕 = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com")
+    url = 바탕.rstrip("/") + "/v1beta/interactions"
+    머리 = {"x-goog-api-key": 열쇠, "Content-Type": "application/json"}
+    몸통 = json.dumps({
+        "model": model,
+        "input": [{"type": "text", "text": prompt}],
+        "response_format": {
+            "type": "image",
+            "mime_type": "image/jpeg",
+            "aspect_ratio": aspect,
+            "image_size": size,
+        },
+    }).encode("utf-8")
+
+    raw = 요청(url, data=몸통, headers=머리, method="POST")
+    try:
+        답 = json.loads(raw.decode("utf-8"))
+    except Exception:
+        실패("그림을 알아볼 수 없어요.")
+
+    b64 = _그림찾기(답)
+    if not b64:
+        실패("그림이 오지 않았어요.")
+    try:
+        데이터 = base64.b64decode(b64)
+    except Exception:
+        실패("그림을 알아볼 수 없어요.")
+    if not 데이터:
+        실패("그림이 비어 있어요.")
+    with open(out, "wb") as f:
+        f.write(데이터)
+
+
+def _그림찾기(값):
+    """output_image.data 가 정석이지만 steps 안에 들어오는 경우도 있다."""
+    if isinstance(값, dict):
+        oi = 값.get("output_image")
+        if isinstance(oi, dict) and oi.get("data"):
+            return oi["data"]
+        # inlineData 형태(구형)도 받아 준다
+        if 값.get("mime_type", "").startswith("image/") and 값.get("data"):
+            return 값["data"]
+        if 값.get("type") == "image" and 값.get("data"):
+            return 값["data"]
+        for v in 값.values():
+            찾음 = _그림찾기(v)
+            if 찾음:
+                return 찾음
+    if isinstance(값, list):
+        for v in 값:
+            찾음 = _그림찾기(v)
+            if 찾음:
+                return 찾음
+    return None
+
+
+def google_video(model, prompt, out, seconds, resolution, aspect):
+    """Veo 영상 생성. 작업을 걸고 끝날 때까지 기다린 뒤 내려받는다."""
+    열쇠 = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not 열쇠:
+        실패("영상 만들기 열쇠가 없어요.")
+    ascii확인(열쇠, "영상 만들기 열쇠")
+
+    바탕 = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com").rstrip("/")
+    머리 = {"x-goog-api-key": 열쇠, "Content-Type": "application/json"}
+    몸통 = json.dumps({
+        "instances": [{"prompt": prompt}],
+        "parameters": {
+            "durationSeconds": str(seconds),
+            "resolution": resolution,
+            "aspectRatio": aspect,
+        },
+    }).encode("utf-8")
+
+    raw = 요청("%s/v1beta/models/%s:predictLongRunning" % (바탕, model),
+              data=몸통, headers=머리, method="POST")
+    올린것 = json.loads(raw.decode("utf-8"))
+    작업 = 올린것.get("name")
+    if not 작업:
+        실패("영상 만들기를 시작하지 못했어요.")
+
+    간격 = float(os.environ.get("CAMP_MEDIA_POLL_SEC", "10"))
+    마감 = time.time() + 20 * 60
+    상태 = {}
+    while time.time() < 마감:
+        time.sleep(간격)
+        상태 = json.loads(요청("%s/v1beta/%s" % (바탕, 작업), headers=머리).decode("utf-8"))
+        if 상태.get("done"):
+            break
+    else:
+        실패("영상 만들기가 너무 오래 걸려요.")
+
+    if 상태.get("error"):
+        실패("영상을 만들지 못했어요.")
+
+    주소 = _url찾기(상태.get("response", 상태))
+    if not 주소:
+        실패("영상이 오지 않았어요.")
+
+    # 영상 주소도 열쇠가 있어야 받을 수 있다
+    데이터 = 요청(주소, headers={"x-goog-api-key": 열쇠}, timeout=300)
+    if not 데이터:
+        실패("영상이 비어 있어요.")
+    with open(out, "wb") as f:
+        f.write(데이터)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--provider", required=True)
@@ -187,10 +302,20 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--steps", type=int, default=4)
     p.add_argument("--extra", default="")
+    p.add_argument("--seconds", type=int, default=5)
+    p.add_argument("--size", default="1K")
+    p.add_argument("--aspect", default="16:9")
+    p.add_argument("--resolution", default="720p")
+    p.add_argument("--kind", default="")
     a = p.parse_args()
 
     try:
-        if a.provider == "cloudflare":
+        if a.provider == "google":
+            if a.kind == "영상":
+                google_video(a.model, a.prompt, a.out, a.seconds, a.resolution, a.aspect)
+            else:
+                google_image(a.model, a.prompt, a.out, a.size, a.aspect)
+        elif a.provider == "cloudflare":
             cloudflare(a.model, a.prompt, a.out, a.steps)
         elif a.provider == "fal":
             fal(a.model, a.prompt, a.out, a.extra)

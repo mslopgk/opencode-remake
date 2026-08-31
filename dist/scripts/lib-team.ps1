@@ -24,6 +24,50 @@ function Get-TeamFolderName([int]$Number, [string]$Name) {
     return ('{0:D2}조_{1}' -f $Number, $Name)
 }
 
+# 바탕화면 경로를 구한다.
+#
+# $env:USERPROFILE\Desktop 을 쓰지 않는 이유: OneDrive 를 쓰는 노트북에서는
+# 바탕화면이 OneDrive 안으로 옮겨져 있다. 그러면 학생 눈에 보이는 바탕화면과
+# 우리가 만든 폴더의 위치가 어긋난다. Windows 에 직접 물어본다.
+function Get-CampDesktop {
+    try {
+        $d = [Environment]::GetFolderPath('Desktop')
+        if ($d -and (Test-Path -LiteralPath $d -PathType Container)) { return $d }
+    } catch { }
+    return (Join-Path $env:USERPROFILE 'Desktop')
+}
+
+# 팀 정보를 묻지 않고 작업 폴더를 만든다. 위치는 **바탕화면**이다.
+#
+# 왜 묻지 않나: 초등학교 5학년에게 시작하자마자 칸 두 개를 채우게 하면
+# 거기서 막힌다. 조 번호와 팀 이름은 도우미가 대화하다가 물어서
+# 우리팀.md 에 적는다. 학생은 채팅 칸에 답만 하면 된다.
+#
+# 왜 바탕화면인가: 학생이 자기가 만든 것을 눈으로 찾을 수 있어야 한다.
+# 사용자 폴더 깊은 곳에 두면 초등학생은 다시 찾아가지 못한다.
+function New-WorkFolder([string]$Parent, [string]$TemplateDir) {
+    if (-not (Test-Path -LiteralPath $TemplateDir -PathType Container)) { return $null }
+
+    # $Parent 를 주면 그곳에 만든다 (시험·멘토용). 안 주면 바탕화면이다.
+    if ([string]::IsNullOrWhiteSpace($Parent)) { $Parent = Get-CampDesktop }
+    if (-not (Test-Path -LiteralPath $Parent)) {
+        New-Item -ItemType Directory -Path $Parent -Force | Out-Null
+    }
+
+    $dir = Join-Path $Parent '내캠페인'
+
+    # 이미 있으면 절대 덮어쓰지 않는다 — 학생 작업물이 들어 있다
+    if (Test-Path -LiteralPath $dir -PathType Container) { return $dir }
+
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    Copy-Item -Path (Join-Path $TemplateDir '*') -Destination $dir -Recurse -Force
+    $assets = Join-Path $dir 'assets'
+    if (-not (Test-Path -LiteralPath $assets)) {
+        New-Item -ItemType Directory -Path $assets -Force | Out-Null
+    }
+    return $dir
+}
+
 function New-TeamFolder([int]$Number, [string]$Name, [string]$Parent, [string]$TemplateDir) {
     $folder = Get-TeamFolderName -Number $Number -Name $Name
     if ($null -eq $folder) { return $null }

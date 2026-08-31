@@ -2,9 +2,9 @@
 # 핵심: 프리셋 로드를 opencode 서버 API 로 "세어서" 확인한다 (실측 검증됨).
 
 $script:ExpectedAgents = 4
-$script:ExpectedCommands = 12
+$script:ExpectedCommands = 11
 $script:AgentNames = @('도우미', '아이디어', '디자이너', '미디어')
-$script:CommandNames = @('시작','아이디어','포스터','음악','영상','슬라이드추가','보여줘','발표연습','제출','도와줘','합쳐줘')
+$script:CommandNames = @('시작','아이디어','포스터','영상','슬라이드추가','보여줘','발표연습','제출','도와줘','합쳐줘','올리기')
 
 function Get-FakeMode { return $env:CAMP_SELFCHECK_FAKE }
 
@@ -58,8 +58,8 @@ function Test-OpencodeVersion([string]$Expected) {
 
 function Test-PresetLoaded([int]$Port) {
     $fake = Get-FakeMode
-    if ($fake -eq 'ok')      { return @{ Ok = $true;  Agents = 4; Commands = 12 } }
-    if ($fake -eq 'partial') { return @{ Ok = $false; Agents = 3; Commands = 12 } }
+    if ($fake -eq 'ok')      { return @{ Ok = $true;  Agents = 4; Commands = 11 } }
+    if ($fake -eq 'partial') { return @{ Ok = $false; Agents = 3; Commands = 11 } }
     if ($fake -eq 'fail')    { return @{ Ok = $false; Agents = 0; Commands = 0 } }
 
     $exe = Get-OpencodeExe
@@ -140,39 +140,52 @@ function Test-DeepSeek {
     }
 }
 
-# 만들기가 연결되는지, 그리고 남은 크레딧이 얼마인지 본다.
+# 그림·영상 만들기가 연결되는지 본다.
 #
-# 그림을 실제로 만들어 보지 않는다. 60명이 점검만 해도 60크레딧이 날아간다.
-# 계정 조회는 공짜다.
-#
-# 크레딧은 15팀이 나눠 쓰는 공유 자원이다. 횟수 제한을 두지 않았으므로
-# 바닥나면 그때부터 아무도 못 만든다. 그래서 남은 양을 반드시 보여 준다.
+# 그림을 실제로 만들지 않는다. 한 장 $0.0336 이라 60명이 점검만 해도 $2 다.
+# 대신 모델 목록 조회로 열쇠와 연결을 확인한다 — 이건 공짜다.
+function Get-CampMediaKey([string]$Name) {
+    $keyFile = Join-Path $env:USERPROFILE '.config\camp\media-keys.env'
+    if (-not (Test-Path -LiteralPath $keyFile -PathType Leaf)) { return $null }
+    foreach ($line in (Get-Content -LiteralPath $keyFile -Encoding UTF8)) {
+        if ($line.Trim() -match ('^\s*' + $Name + '\s*=\s*(.+)$')) {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return $null
+}
+
 function Test-MediaKeys {
     $fake = Get-FakeMode
-    if ($fake -eq 'ok' -or $fake -eq 'partial') { return @{ Ok = $true; Credits = 999.0 } }
-    if ($fake -eq 'fail') { return @{ Ok = $false; Credits = 0.0 } }
+    if ($fake -eq 'ok' -or $fake -eq 'partial') { return @{ Ok = $true; Where = '(연습)' } }
+    if ($fake -eq 'fail') { return @{ Ok = $false; Where = '' } }
 
-    $cmd = Get-Command higgsfield -ErrorAction SilentlyContinue
-    if ($null -eq $cmd) { return @{ Ok = $false; Credits = 0.0 } }
+    $keyFile = Join-Path $env:USERPROFILE '.config\camp\media-keys.env'
+    if (-not (Test-Path -LiteralPath $keyFile -PathType Leaf)) {
+        return @{ Ok = $false; Where = '열쇠 파일이 없어요' }
+    }
+    $key = Get-CampMediaKey 'GEMINI_API_KEY'
+    if (-not $key) { return @{ Ok = $false; Where = '열쇠가 비어 있어요' } }
 
-    # 5.1 에서 네이티브 exe 에 2>&1 을 쓰면 종료코드 0 에도 실패로 보인다(실측).
-    $out = Join-Path $env:TEMP ('hfstat-' + [guid]::NewGuid().ToString('N') + '.txt')
     try {
-        $p = Start-Process -FilePath $cmd.Source -ArgumentList @('account', 'status') `
-                -PassThru -Wait -WindowStyle Hidden `
-                -RedirectStandardOutput $out -RedirectStandardError ($out + '.err')
-        if ($p.ExitCode -ne 0) { return @{ Ok = $false; Credits = 0.0 } }
-        $text = [string]::Join(' ', @(Get-Content -LiteralPath $out -Encoding UTF8 -ErrorAction SilentlyContinue))
-        $credits = 0.0
-        $m = [regex]::Match($text, '([0-9]+(\.[0-9]+)?)\s*credits')
-        if ($m.Success) { $credits = [double]$m.Groups[1].Value }
-        return @{ Ok = ($text -match 'credits'); Credits = $credits }
+        # 모델 목록 조회는 돈이 안 든다. 열쇠가 틀리면 400/403 이 온다.
+        $wc = New-Object System.Net.WebClient
+        $wc.Encoding = [System.Text.Encoding]::UTF8
+        $wc.Headers.Add('x-goog-api-key', $key)
+        $raw = $wc.DownloadString('https://generativelanguage.googleapis.com/v1beta/models')
+        return @{ Ok = ($raw -match '"models"'); Where = '' }
     }
-    catch { return @{ Ok = $false; Credits = 0.0 } }
-    finally {
-        Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath ($out + '.err') -Force -ErrorAction SilentlyContinue
+    catch [System.Net.WebException] {
+        $r = $_.Exception.Response
+        if ($null -eq $r) { return @{ Ok = $false; Where = '인터넷이 안 돼요' } }
+        $code = [int]$r.StatusCode
+        $r.Close()
+        if ($code -eq 400 -or $code -eq 401 -or $code -eq 403) {
+            return @{ Ok = $false; Where = '열쇠가 맞지 않아요' }
+        }
+        return @{ Ok = $false; Where = '연결에 문제가 있어요' }
     }
+    catch { return @{ Ok = $false; Where = '인터넷이나 열쇠에 문제가 있어요' } }
 }
 
 # 에이전트가 실행하는 도구가 실제로 있는지 확인한다.
@@ -202,7 +215,7 @@ function Test-GithubCli {
     if ($fake -eq 'ok' -or $fake -eq 'partial') { return $true }
     if ($fake -eq 'fail') { return $false }
 
-    $exe = Join-Path $env:LOCALAPPDATA 'Programs\gh-cliin\gh.exe'
+    $exe = Join-Path $env:LOCALAPPDATA 'Programs\gh-cli\bin\gh.exe'
     if (Test-Path -LiteralPath $exe -PathType Leaf) { return $true }
     return ($null -ne (Get-Command 'gh.exe' -CommandType Application -ErrorAction SilentlyContinue))
 }
@@ -219,7 +232,7 @@ function Invoke-SelfCheck {
     $p = Test-PresetLoaded -Port 4399
     if ($p.Ok) { Write-Ok '캠프 설정이 들어갔어요' }
     else {
-        Write-Fail ('캠프 설정이 덜 들어갔어요 (도우미 ' + $p.Agents + '/4, 명령 ' + $p.Commands + '/12)')
+        Write-Fail ('캠프 설정이 덜 들어갔어요 (도우미 ' + $p.Agents + '/4, 명령 ' + $p.Commands + '/11)')
         $fails += '설정'
     }
 
@@ -237,12 +250,12 @@ function Invoke-SelfCheck {
 
     Write-Step '5/6 그림 만들기가 연결되는지 확인 중'
     $h = Test-MediaKeys
-    if ($h.Ok) {
-        Write-Ok ('그림 만들기가 연결됐어요 (남은 양 ' + $h.Credits + ')')
-        # 영상 한 편이 8, 그림 한 장이 1이다. 15팀이 나눠 쓴다.
-        if ($h.Credits -lt 300) { Write-Note '남은 양이 적어요. 선생님께 알려 주세요.' }
+    if ($h.Ok) { Write-Ok '그림 만들기가 연결됐어요' }
+    else {
+        if ($h.Where) { Write-Fail ('그림 만들기가 연결되지 않았어요 — ' + $h.Where) }
+        else { Write-Fail '그림 만들기가 연결되지 않았어요' }
+        $fails += '그림'
     }
-    else { Write-Fail '그림 만들기가 연결되지 않았어요'; $fails += '그림' }
 
     Write-Step '6/6 인터넷에 올리는 도구가 있는지 확인 중'
     if (Test-GithubCli) { Write-Ok '인터넷에 올리는 도구가 있어요' }
@@ -256,13 +269,19 @@ function Invoke-SelfCheck {
 
     Write-Fail ('안 된 것: ' + ($fails -join ', '))
     Write-Note '아래를 확인해 보세요.'
-    if ($fails -contains '도구')  { Write-Note '- 설치하기를 다시 실행해 주세요.' }
-    if ($fails -contains '설정')  { Write-Note '- 설치하기를 다시 실행하면 설정이 다시 들어갑니다.' }
-    if ($fails -contains 'AI')    { Write-Note '- 인터넷이 연결됐는지 확인해 주세요.' }
-    if ($fails -contains '도구파일') { Write-Note '- 설치하기를 다시 실행하면 만들기 도구가 다시 들어갑니다.' }
-    if ($fails -contains '그림')  { Write-Note '- 인터넷 확인 후에도 안 되면 선생님을 불러 주세요.' }
-    if ($fails -contains '올리기') { Write-Note '- 설치하기를 다시 실행하면 올리는 도구가 다시 들어갑니다.' }
-    Write-Note '그래도 안 되면 선생님께 기록 파일을 보여 주세요.'
+    # 집에서 미리 설치하는 경우가 많다. "선생님을 불러 주세요" 는 그때 쓸 수 없다.
+    # 그래서 스스로 해 볼 수 있는 것을 먼저 말하고, 그다음 연락처를 준다.
+    Write-Note ''
+    Write-Note '[1] 인터넷이 연결됐는지 확인해 주세요.'
+    Write-Note '[2] 바탕화면의 "창의디자인캠프 설치" 를 한 번 더 실행해 주세요.'
+    Write-Note '    (이미 깔린 것은 건너뛰므로 빠르게 끝납니다)'
+    Write-Note '[3] 그 뒤에 "점검" 을 다시 실행해 주세요.'
+    Write-Note ''
+    Write-Note '두 번 해도 안 되면 아래로 알려 주세요.'
+    Write-Note ('  기록 파일: ' + (Join-Path $env:USERPROFILE '창의디자인캠프'))
+    Write-Note '  운영팀: (연락처를 여기에 넣으세요)'
+    Write-Note ''
+    Write-Note '캠프 당일 아침에도 도와드립니다. 그냥 오셔도 괜찮습니다.'
     return 1
 }
 

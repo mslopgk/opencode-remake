@@ -6,7 +6,7 @@
 
 function Get-GhExe {
     if ($env:CAMP_GH_EXE) { return $env:CAMP_GH_EXE }
-    $p = Join-Path $env:LOCALAPPDATA 'Programs\gh-cliin\gh.exe'
+    $p = Join-Path $env:LOCALAPPDATA 'Programs\gh-cli\bin\gh.exe'
     if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
     $onPath = Get-Command 'gh.exe' -CommandType Application -ErrorAction SilentlyContinue
     if ($null -ne $onPath) { return $onPath.Source }

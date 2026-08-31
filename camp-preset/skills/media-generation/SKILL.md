@@ -1,6 +1,6 @@
 ---
 name: media-generation
-description: 캠프에서 그림·음악·영상을 만드는 방법. camp-media.sh 사용법과 비용 규칙을 담고 있다. 미디어를 만들기 전에 반드시 읽는다
+description: 캠프에서 그림·영상을 만드는 방법. camp-media.sh 사용법과 비용 규칙을 담고 있다. 미디어를 만들기 전에 반드시 읽는다
 ---
 
 # 미디어 만들기
@@ -12,7 +12,7 @@ description: 캠프에서 그림·음악·영상을 만드는 방법. camp-media
 **경로를 그대로 쓴다. PATH 에서 찾지 마라 — 없다.**
 
 ```bash
-"$LOCALAPPDATA/Programs/camp-tools/camp-media.sh" --kind <그림|대표|음악|영상> --prompt <영어 설명> --team-dir <팀폴더>
+"$LOCALAPPDATA/Programs/camp-tools/camp-media.sh" --kind <그림|대표|영상> --prompt <영어 설명> --team-dir <팀폴더>
 ```
 
 명령을 찾지 못하면 `find` 로 디스크를 뒤지지 마라. 학생에게
@@ -26,7 +26,6 @@ description: 캠프에서 그림·음악·영상을 만드는 방법. camp-media
 |---|---|---|
 | `그림` | 보통의 그림. **기본으로 이걸 쓴다** | 몇 초 |
 | `대표` | 발표 표지처럼 딱 한 장 중요한 것 (더 크고 선명하게 나온다) | 몇 초 |
-| `음악` | 배경음악, 효과음, 로고송 | 몇십 초 |
 | `영상` | 짧은 캠페인 영상 (5초) | 1~2분 |
 
 **횟수 제한은 없다.** 마음에 들 때까지 다시 만들어도 된다.
