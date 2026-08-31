@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # 창의디자인캠프 미디어 생성 래퍼.
 #
-# 이 스크립트의 존재 이유: 예산을 강제한다.
-# 프롬프트로 "아껴 써" 라고 부탁하는 것으로는 지켜지지 않으므로
-# 여기서 기계적으로 막는다.
+# 이 스크립트가 하는 일: 어떤 모델을 쓸지 정하고, 파일 이름을 겹치지 않게
+# 붙이고, 쓴 만큼 기록을 남긴다.
+#
+# 횟수 제한은 없다. 주최측 결정이다 — 학생이 "다 썼어요" 벽에 막히는 것보다
+# 돈을 조금 더 내는 편이 낫다. 대신 얼마나 썼는지는 기록해서 운영진이 볼 수
+# 있게 한다 (<팀폴더>/.camp/usage.log).
 #
 # 제공자를 왜 나눴나 (실측 단가 기준):
 #   그림·대표 → Cloudflare Workers AI (FLUX.1 schnell)
 #       하루 10,000 뉴런 무료, 넘어가도 1,000 뉴런당 $0.011.
 #       한 장에 약 40~150 뉴런이라 캠프 전체를 다 써도 1달러가 안 된다.
 #   영상     → fal.ai (MiniMax H3) 초당 $0.08. 5초 한 편에 $0.40.
-#       팀당 2편 × 15팀 = 30편 ≈ $12.
+#       제한이 없으므로 여기가 유일하게 돈이 크게 나갈 수 있는 곳이다.
+#       한도는 fal.ai 대시보드의 spending cap 으로 거는 것이 맞다
+#       (학생을 막지 않으면서 총액만 막는다).
 #   음악     → Higgsfield (seed_audio) 0.1 크레딧. 이미 사 둔 크레딧으로
 #       충분하고, 무료로 음악을 만들어 주는 곳이 마땅치 않다.
 #
@@ -19,8 +24,7 @@
 #                 --team-dir <팀폴더> [--name <파일이름>]
 #
 # 성공: 저장된 파일의 팀폴더 기준 상대경로를 stdout 에 한 줄 출력
-# 실패 exit 코드: 2=영상 초과, 3=대표 초과, 4=인자 오류, 5=생성 실패,
-#                 6=열쇠 없음
+# 실패 exit 코드: 4=인자 오류, 5=생성 실패, 6=열쇠 없음
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,20 +52,24 @@ if [ -f "$KEYS_FILE" ]; then
   . "$KEYS_FILE"
 fi
 
-# 종류별 제공자·모델·확장자·횟수 제한
+# 종류별 제공자·모델·확장자·대략 단가(달러).
+#
+# 횟수는 제한하지 않는다. 대신 **모델과 길이는 여기서 고정한다.**
+# 학생이나 에이전트가 더 비싼 모델이나 더 긴 영상을 고를 수 없다.
+# 영상값은 길이에 비례하므로(초당 $0.08) 길이 고정이 곧 편당 상한이다.
 case "$KIND" in
   그림)
     PROVIDER="cloudflare"; MODEL="@cf/black-forest-labs/flux-1-schnell"
-    EXT="png"; STEPS=4;  LIMIT_KEY="그림"; LIMIT=30 ;;
+    EXT="png"; STEPS=4;  COST="0.001"; SECS=0 ;;
   대표)
     PROVIDER="cloudflare"; MODEL="@cf/black-forest-labs/flux-1-schnell"
-    EXT="png"; STEPS=8;  LIMIT_KEY="대표"; LIMIT=6 ;;
+    EXT="png"; STEPS=8;  COST="0.002"; SECS=0 ;;
   음악)
     PROVIDER="higgsfield"; MODEL="seed_audio"
-    EXT="wav"; STEPS=0;  LIMIT_KEY="";    LIMIT=0 ;;
+    EXT="wav"; STEPS=0;  COST="0.000"; SECS=0 ;;
   영상)
     PROVIDER="fal"; MODEL="minimax/h3/text-to-video"
-    EXT="mp4"; STEPS=0;  LIMIT_KEY="영상"; LIMIT=2 ;;
+    EXT="mp4"; STEPS=0;  COST="0.400"; SECS=5 ;;
   *) echo "만들 수 있는 것은 그림, 대표, 음악, 영상이에요." >&2; exit 4 ;;
 esac
 
@@ -70,6 +78,7 @@ PROVIDER="${CAMP_MEDIA_PROVIDER:-$PROVIDER}"
 
 COUNT_DIR="$TEAM_DIR/.camp"
 COUNT_FILE="$COUNT_DIR/counts"
+USAGE_FILE="$COUNT_DIR/usage.log"
 mkdir -p "$COUNT_DIR" "$TEAM_DIR/assets"
 [ -f "$COUNT_FILE" ] || : > "$COUNT_FILE"
 
@@ -86,18 +95,6 @@ write_count() {
   printf '%s=%s\n' "$key" "$val" >> "$tmp"
   mv "$tmp" "$COUNT_FILE"
 }
-
-# 횟수 제한 확인 (만들기 전에 막는다)
-if [ -n "$LIMIT_KEY" ]; then
-  USED="$(read_count "$LIMIT_KEY")"
-  if [ "$USED" -ge "$LIMIT" ]; then
-    case "$LIMIT_KEY" in
-      영상) echo "영상은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2; exit 2 ;;
-      대표) echo "대표 그림은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2; exit 3 ;;
-      *)    echo "그림은 팀마다 ${LIMIT}번까지만 만들 수 있어요. 이미 ${USED}번 만들었어요." >&2; exit 3 ;;
-    esac
-  fi
-fi
 
 # 파일 이름 결정 (겹치지 않게 번호를 붙인다)
 if [ -z "$NAME" ]; then
@@ -145,7 +142,7 @@ else
   fi
   ERR="$(mktemp)"
   if "$PY" "$HERE/media-gen.py" --provider "$PROVIDER" --model "$MODEL" \
-        --prompt "$PROMPT" --out "$DEST" --steps "$STEPS" 2>"$ERR"; then
+        --prompt "$PROMPT" --out "$DEST" --steps "$STEPS" --seconds "$SECS" 2>"$ERR"; then
     rm -f "$ERR"
   else
     MSG="$(tail -1 "$ERR" 2>/dev/null)"
@@ -164,9 +161,9 @@ if [ ! -s "$DEST" ]; then
   exit 5
 fi
 
-# 성공했을 때만 카운터를 올린다
-if [ -n "$LIMIT_KEY" ]; then
-  write_count "$LIMIT_KEY" "$(( $(read_count "$LIMIT_KEY") + 1 ))"
-fi
+# 성공했을 때만 기록한다. 막지는 않지만, 얼마나 썼는지는 남긴다.
+write_count "$KIND" "$(( $(read_count "$KIND") + 1 ))"
+printf '%s	%s	%s	%s
+' "$(date '+%Y-%m-%d %H:%M:%S')" "$KIND" "$COST" "$REL" >> "$USAGE_FILE"
 
 printf '%s\n' "$REL"

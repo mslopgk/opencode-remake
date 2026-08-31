@@ -184,7 +184,7 @@ function Test-CampTools {
     if ($fake -eq 'fail') { return @{ Ok = $false; Missing = @('camp-media.sh') } }
 
     $dir = Join-Path $env:LOCALAPPDATA 'Programs\camp-tools'
-    $need = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py', 'camp-publish.sh', 'media-gen.py')
+    $need = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py', 'camp-publish.sh', 'media-gen.py', 'camp-usage.sh')
     $missing = @()
     foreach ($n in $need) {
         if (-not (Test-Path -LiteralPath (Join-Path $dir $n) -PathType Leaf)) { $missing += $n }

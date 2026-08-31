@@ -11,7 +11,7 @@ function Invoke-BuildDist([string]$RepoDir) {
 
     # 에이전트가 실행하는 도구들. 이게 학생 노트북에 없으면
     # /포스터·/음악·/영상·/합쳐줘 가 전부 실패한다 (실제로 겪음).
-    $toolNames = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py', 'camp-publish.sh', 'media-gen.py')
+    $toolNames = @('camp-media.sh', 'merge-slides.sh', 'merge-slides.py', 'camp-publish.sh', 'media-gen.py', 'camp-usage.sh')
     $toolDst = Join-Path $RepoDir 'dist\tools'
     if (Test-Path -LiteralPath $toolDst) { Remove-Item -Recurse -Force $toolDst }
     New-Item -ItemType Directory -Path $toolDst -Force | Out-Null
@@ -54,6 +54,7 @@ function Test-DistComplete([string]$DistDir) {
         'tools\merge-slides.py',
         'tools\camp-publish.sh',
         'tools\media-gen.py',
+        'tools\camp-usage.sh',
         '설치하기.cmd',
         '점검하기.cmd',
         '캠프시작.cmd',

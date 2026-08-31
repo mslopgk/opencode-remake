@@ -36,7 +36,9 @@ assert_not_contains "$P" "higgsfield generate" "/포스터 가 CLI 를 직접 �
 
 # /영상 은 횟수 제한을 학생에게 알려야 한다
 V="$(cat "$REPO/camp-preset/command/영상.md" 2>/dev/null || echo '')"
-assert_contains "$V" "2번" "/영상 이 횟수 제한을 안내"
+# 횟수는 제한하지 않기로 했다. 대신 길이가 고정이라는 것을 알려야 한다.
+assert_contains "$V" "5초" "/영상 이 정해진 길이를 안내"
+assert_not_contains "$V" "2번까지" "/영상 이 없는 제한을 말하지 않음"
 
 # /합쳐줘 는 slides 조립을 지시해야 한다
 M="$(cat "$REPO/camp-preset/command/합쳐줘.md" 2>/dev/null || echo '')"

@@ -23,15 +23,11 @@ assert_eq "$?" "0" "그림 생성이 성공"
 assert_contains "$OUT" "assets/" "출력이 assets 상대경로"
 assert_eq "$OUT" "assets/그림-1.png" "그림 이름에 번호가 붙음"
 
-# --- 2) 대표 그림은 팀당 6회까지 ---
-# 무료 제공자로 옮겨 단가가 거의 0 이 됐으므로 2회에서 6회로 늘렸다.
-# 그래도 한도를 두는 이유: 하루 무료량을 15팀이 나눠 쓴다.
-for i in 1 2 3 4 5 6; do
+# --- 2) 횟수 제한 없음 (주최측 결정: 학생을 막지 않는다) ---
+for i in 1 2 3 4 5 6 7 8; do
   bash "$SCRIPT" --kind 대표 --prompt "poster $i" --team-dir "$TEAM" >/dev/null 2>&1
 done
-assert_eq "$?" "0" "대표 그림 6회째까지 허용"
-bash "$SCRIPT" --kind 대표 --prompt "poster 7" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "3" "대표 그림 7회째는 거부 (exit 3)"
+assert_eq "$?" "0" "대표 그림을 여러 번 만들어도 막지 않음"
 
 # --- 3) 음악은 제한 없음 ---
 for i in 1 2 3 4 5; do
@@ -39,17 +35,15 @@ for i in 1 2 3 4 5; do
 done
 assert_eq "$?" "0" "음악은 5회째도 허용"
 
-# --- 4) 영상은 팀당 2회 제한 (가장 비싸다) ---
-bash "$SCRIPT" --kind 영상 --prompt "ocean cleanup clip" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "0" "영상 1회째 허용"
-bash "$SCRIPT" --kind 영상 --prompt "clip 2" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "0" "영상 2회째 허용"
-bash "$SCRIPT" --kind 영상 --prompt "clip 3" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "2" "영상 3회째는 거부 (exit 2)"
+# --- 4) 영상도 횟수 제한 없음. 모델과 길이만 고정한다 ---
+for i in 1 2 3; do
+  bash "$SCRIPT" --kind 영상 --prompt "clip $i" --team-dir "$TEAM" >/dev/null 2>&1
+done
+assert_eq "$?" "0" "영상 3회째도 막지 않음"
 
 # --- 5) 카운터가 팀 폴더에 저장된다 ---
 assert_file "$TEAM/.camp/counts" "카운터 파일 존재"
-assert_contains "$(cat "$TEAM/.camp/counts")" "영상=2" "영상 카운터가 2"
+assert_contains "$(cat "$TEAM/.camp/counts")" "영상=3" "영상 기록이 3"
 
 # --- 6) 카운터는 팀별로 독립 ---
 TEAM2="$TMP/07조_별빛"
@@ -76,7 +70,7 @@ ERR="$( unset CAMP_MEDIA_FAKE_DOWNLOAD
 assert_eq "$?" "6" "열쇠가 없으면 exit 6"
 assert_contains "$ERR" "열쇠가 없어요" "실패 메시지가 한국어"
 
-# --- 9) 실패는 카운터를 늘리지 않는다 ---
+# --- 9) 실패는 기록을 늘리지 않는다 (돈이 안 나갔으니까) ---
 BEFORE="$(grep '^영상=' "$TEAM2/.camp/counts" 2>/dev/null | cut -d= -f2)"
 ( unset CAMP_MEDIA_FAKE_DOWNLOAD
   export CAMP_MEDIA_KEYS="$TMP/없는열쇠.env"

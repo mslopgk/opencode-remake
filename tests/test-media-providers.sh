@@ -60,11 +60,23 @@ assert_eq "$?" "0" "영상 생성 성공"
 assert_eq "$OUT3" "assets/영상-1.mp4" "영상 상대경로"
 assert_contains "$(head -c 12 "$TEAM/$OUT3")" "ftyp" "진짜 mp4 를 받아 저장"
 
-# --- 5) 영상은 팀당 2편까지 ---
-bash "$S" --kind 영상 --prompt "b" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "0" "영상 2편째 허용"
-bash "$S" --kind 영상 --prompt "c" --team-dir "$TEAM" >/dev/null 2>&1
-assert_eq "$?" "2" "영상 3편째는 거부 (exit 2)"
+# --- 5) 횟수는 제한하지 않는다 (주최측 결정) ---
+for i in b c d e; do
+  bash "$S" --kind 영상 --prompt "$i" --team-dir "$TEAM" >/dev/null 2>&1
+done
+assert_eq "$?" "0" "영상 5편째도 막지 않음"
+bash "$S" --kind 대표 --prompt "many" --team-dir "$TEAM" >/dev/null 2>&1
+assert_eq "$?" "0" "대표 그림도 막지 않음"
+
+# --- 5b) 대신 모델과 길이는 고정한다 (편당 상한이 곧 길이다) ---
+SRC5="$(cat "$S")"
+assert_contains "$SRC5" 'SECS=5' "영상 길이가 5초로 고정"
+assert_contains "$SRC5" '--seconds "$SECS"' "고정한 길이를 실제로 넘김"
+
+# --- 5c) 쓴 만큼 기록이 남는다 (막지 않는 대신 보이게 한다) ---
+assert_file "$TEAM/.camp/usage.log" "사용 기록 파일이 생김"
+assert_contains "$(cat "$TEAM/.camp/usage.log")" "영상" "영상 사용이 기록됨"
+assert_contains "$(cat "$TEAM/.camp/usage.log")" "0.400" "영상 단가가 기록됨"
 
 # --- 6) 실패하면 횟수를 올리지 않는다 (돈이 안 나갔으니까) ---
 T2="$TMP/04조"; mkdir -p "$T2/assets"
