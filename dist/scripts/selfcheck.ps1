@@ -140,11 +140,23 @@ function Test-DeepSeek {
     }
 }
 
-# 그림 만들기 열쇠가 살아 있는지 본다.
+# 그림·영상 만들기 열쇠가 살아 있는지 본다.
 #
-# 그림을 실제로 만들어 보지 않는다. 만들면 돈(뉴런)이 나가고, 60명이
-# 동시에 점검하면 하루치 무료량을 점검만으로 다 쓴다.
-# Cloudflare 의 열쇠 확인 주소는 공짜다.
+# 그림을 실제로 만들어 보지 않는다. Nano Banana 2 는 한 장 $0.08 이라
+# 60명이 점검만 해도 5달러가 나간다.
+# 대신 fal 에 아무 열쇠나 통하지 않는 주소를 불러 본다.
+# 열쇠가 틀리면 401/403, 맞으면 그 외(404 등)가 온다 — 공짜다.
+function Get-CampMediaKey([string]$Name) {
+    $keyFile = Join-Path $env:USERPROFILE '.config\camp\media-keys.env'
+    if (-not (Test-Path -LiteralPath $keyFile -PathType Leaf)) { return $null }
+    foreach ($line in (Get-Content -LiteralPath $keyFile -Encoding UTF8)) {
+        if ($line.Trim() -match ('^\s*' + $Name + '\s*=\s*(.+)$')) {
+            return $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return $null
+}
+
 function Test-MediaKeys {
     $fake = Get-FakeMode
     if ($fake -eq 'ok' -or $fake -eq 'partial') { return @{ Ok = $true; Where = '(연습)' } }
@@ -154,21 +166,30 @@ function Test-MediaKeys {
     if (-not (Test-Path -LiteralPath $keyFile -PathType Leaf)) {
         return @{ Ok = $false; Where = '열쇠 파일이 없어요' }
     }
-
-    $acct = ''; $token = ''
-    foreach ($line in (Get-Content -LiteralPath $keyFile -Encoding UTF8)) {
-        $t = $line.Trim()
-        if ($t -match '^\s*CF_ACCOUNT_ID\s*=\s*(.+)$') { $acct  = $Matches[1].Trim('"').Trim("'") }
-        if ($t -match '^\s*CF_API_TOKEN\s*=\s*(.+)$')  { $token = $Matches[1].Trim('"').Trim("'") }
-    }
-    if (-not $acct -or -not $token) { return @{ Ok = $false; Where = '열쇠가 비어 있어요' } }
+    $fal = Get-CampMediaKey 'FAL_KEY'
+    if (-not $fal) { return @{ Ok = $false; Where = '열쇠가 비어 있어요' } }
 
     try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Encoding = [System.Text.Encoding]::UTF8
-        $wc.Headers.Add('Authorization', 'Bearer ' + $token)
-        $raw = $wc.DownloadString('https://api.cloudflare.com/client/v4/user/tokens/verify')
-        return @{ Ok = ($raw -match '"success"\s*:\s*true'); Where = '' }
+        $req = [System.Net.HttpWebRequest]::Create('https://queue.fal.run/fal-ai/nano-banana-2/requests/camp-selfcheck-probe')
+        $req.Method = 'GET'
+        $req.Timeout = 15000
+        $req.Headers.Add('Authorization', 'Key ' + $fal)
+        try {
+            $resp = $req.GetResponse()
+            $resp.Close()
+            return @{ Ok = $true; Where = '' }      # 200 이면 당연히 통과
+        }
+        catch [System.Net.WebException] {
+            $r = $_.Exception.Response
+            if ($null -eq $r) { return @{ Ok = $false; Where = '인터넷이 안 돼요' } }
+            $code = [int]$r.StatusCode
+            $r.Close()
+            # 401/403 = 열쇠가 틀렸다. 그 밖(404 등)은 열쇠가 통했다는 뜻이다.
+            if ($code -eq 401 -or $code -eq 403) {
+                return @{ Ok = $false; Where = '열쇠가 맞지 않아요' }
+            }
+            return @{ Ok = $true; Where = '' }
+        }
     }
     catch { return @{ Ok = $false; Where = '인터넷이나 열쇠에 문제가 있어요' } }
 }

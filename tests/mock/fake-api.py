@@ -34,7 +34,10 @@ class H(BaseHTTPRequestHandler):
                 return self._json({"success": False, "errors": [{"message": "설명이 없어요"}]}, 400)
             return self._json({"success": True, "errors": [], "messages": [],
                                "result": {"image": base64.b64encode(PNG).decode()}})
-        if p.startswith("/minimax/"):
+        if p.startswith("/fal-ai/") or p.startswith("/minimax/"):
+            # 어떤 입력을 보냈는지 확인할 수 있게 기록해 둔다
+            self.server.마지막입력 = 몸통
+            self.server.마지막경로 = p
             상태호출["n"] = 0
             base = "http://127.0.0.1:%d" % self.server.server_port
             return self._json({"request_id": "req1",
@@ -49,7 +52,25 @@ class H(BaseHTTPRequestHandler):
             return self._json({"status": "COMPLETED" if 상태호출["n"] >= 2 else "IN_PROGRESS"})
         if self.path == "/result":
             base = "http://127.0.0.1:%d" % self.server.server_port
+            # 그림이면 Nano Banana 2 의 응답 모양, 영상이면 영상 모양
+            경로 = getattr(self.server, "마지막경로", "")
+            if "nano-banana" in 경로:
+                return self._json({"images": [{"url": base + "/f.png",
+                                              "content_type": "image/png",
+                                              "file_name": "out.png",
+                                              "width": 1024, "height": 576}],
+                                   "description": "생성됨"})
             return self._json({"video": {"url": base + "/f.mp4"}})
+        # URL 경로에는 한글을 쓰지 않는다 (퍼센트 인코딩돼서 안 맞는다)
+        if self.path == "/last-input":
+            return self._json({"입력": getattr(self.server, "마지막입력", {})})
+        if self.path == "/f.png":
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(PNG)))
+            self.end_headers()
+            self.wfile.write(PNG)
+            return
         if self.path == "/f.mp4":
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")

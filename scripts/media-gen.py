@@ -108,7 +108,7 @@ def _url찾기(값):
     if isinstance(값, str) and 값.startswith("http"):
         return 값
     if isinstance(값, dict):
-        for 열쇠 in ("url", "video", "audio", "file"):
+        for 열쇠 in ("url", "images", "video", "audio", "file"):
             if 열쇠 in 값:
                 찾음 = _url찾기(값[열쇠])
                 if 찾음:
@@ -125,14 +125,25 @@ def _url찾기(값):
     return None
 
 
-def fal(model, prompt, out, seconds):
+def fal(model, prompt, out, extra):
     열쇠 = os.environ.get("FAL_KEY", "").strip()
     if not 열쇠:
         실패("영상 만들기 열쇠가 없어요.")
     ascii확인(열쇠, "영상 만들기 열쇠")
 
     머리 = {"Authorization": "Key " + 열쇠, "Content-Type": "application/json"}
-    몸통 = json.dumps({"prompt": prompt, "duration": seconds}).encode("utf-8")
+
+    # 모델마다 받는 입력이 다르다(영상은 duration, 그림은 resolution 등).
+    # 값은 camp-media.sh 가 정한 고정 문자열이고 학생 입력이 아니다.
+    입력 = {"prompt": prompt}
+    if extra:
+        try:
+            추가 = json.loads(extra)
+        except Exception:
+            실패("만들기 설정을 알아볼 수 없어요.")
+        if isinstance(추가, dict):
+            입력.update(추가)
+    몸통 = json.dumps(입력).encode("utf-8")
 
     바탕 = os.environ.get("FAL_QUEUE_BASE", "https://queue.fal.run")
     raw = 요청(바탕.rstrip("/") + "/" + model, data=몸통, headers=머리, method="POST")
@@ -175,14 +186,14 @@ def main():
     p.add_argument("--prompt", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--steps", type=int, default=4)
-    p.add_argument("--seconds", type=int, default=5)
+    p.add_argument("--extra", default="")
     a = p.parse_args()
 
     try:
         if a.provider == "cloudflare":
             cloudflare(a.model, a.prompt, a.out, a.steps)
         elif a.provider == "fal":
-            fal(a.model, a.prompt, a.out, a.seconds)
+            fal(a.model, a.prompt, a.out, a.extra)
         else:
             실패("모르는 제공자예요: %s" % a.provider)
     except RuntimeError as e:

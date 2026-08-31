@@ -9,9 +9,13 @@
 # 있게 한다 (<팀폴더>/.camp/usage.log).
 #
 # 제공자를 왜 나눴나 (실측 단가 기준):
-#   그림·대표 → Cloudflare Workers AI (FLUX.1 schnell)
-#       하루 10,000 뉴런 무료, 넘어가도 1,000 뉴런당 $0.011.
-#       한 장에 약 40~150 뉴런이라 캠프 전체를 다 써도 1달러가 안 된다.
+#   그림·대표 → fal.ai (Nano Banana 2 / Google)
+#       한 장 $0.08 (대표는 2K 라 $0.12).
+#       원래 Cloudflare FLUX.1 schnell($0.0006)을 썼는데, 4스텝 증류
+#       모델이라 프롬프트 이해력과 글자가 약했다. 캠프 결과물이
+#       주최측에 보여질 물건이라 품질을 택했다.
+#       Cloudflare 경로는 지우지 않고 남겨 뒀다 — 캠프 당일 fal 이
+#       막히면 CAMP_MEDIA_PROVIDER=cloudflare 로 넘어갈 수 있다.
 #   영상     → fal.ai (MiniMax H3) 초당 $0.08. 5초 한 편에 $0.40.
 #       제한이 없으므로 여기가 유일하게 돈이 크게 나갈 수 있는 곳이다.
 #       한도는 fal.ai 대시보드의 spending cap 으로 거는 것이 맞다
@@ -54,27 +58,38 @@ fi
 
 # 종류별 제공자·모델·확장자·대략 단가(달러).
 #
-# 횟수는 제한하지 않는다. 대신 **모델과 길이는 여기서 고정한다.**
-# 학생이나 에이전트가 더 비싼 모델이나 더 긴 영상을 고를 수 없다.
-# 영상값은 길이에 비례하므로(초당 $0.08) 길이 고정이 곧 편당 상한이다.
+# 횟수는 제한하지 않는다. 대신 **모델·해상도·영상 길이를 여기서 고정한다.**
+# 학생이나 에이전트가 더 비싼 설정을 고를 수 없다.
+# 값이 길이·해상도에 비례하므로 이 고정이 곧 한 장(한 편)당 상한이다.
 case "$KIND" in
   그림)
-    PROVIDER="cloudflare"; MODEL="@cf/black-forest-labs/flux-1-schnell"
-    EXT="png"; STEPS=4;  COST="0.001"; SECS=0 ;;
+    PROVIDER="fal"; MODEL="fal-ai/nano-banana-2"
+    EXT="png"; STEPS=4; COST="0.080"
+    EXTRA='{"num_images":1,"resolution":"1K","aspect_ratio":"16:9","output_format":"png"}' ;;
   대표)
-    PROVIDER="cloudflare"; MODEL="@cf/black-forest-labs/flux-1-schnell"
-    EXT="png"; STEPS=8;  COST="0.002"; SECS=0 ;;
+    # 발표 표지는 프로젝터에 꽉 차게 나온다. 이 한 장만 2K 로 뽑는다.
+    PROVIDER="fal"; MODEL="fal-ai/nano-banana-2"
+    EXT="png"; STEPS=8; COST="0.120"
+    EXTRA='{"num_images":1,"resolution":"2K","aspect_ratio":"16:9","output_format":"png"}' ;;
   음악)
     PROVIDER="higgsfield"; MODEL="seed_audio"
-    EXT="wav"; STEPS=0;  COST="0.000"; SECS=0 ;;
+    EXT="wav"; STEPS=0; COST="0.000"; EXTRA='' ;;
   영상)
     PROVIDER="fal"; MODEL="minimax/h3/text-to-video"
-    EXT="mp4"; STEPS=0;  COST="0.400"; SECS=5 ;;
+    EXT="mp4"; STEPS=0; COST="0.400"
+    EXTRA='{"duration":5}' ;;
   *) echo "만들 수 있는 것은 그림, 대표, 음악, 영상이에요." >&2; exit 4 ;;
 esac
 
-# 시험용으로 제공자를 갈아끼울 수 있게 한다 (실제 캠프에서는 쓰지 않는다)
+# 제공자를 갈아끼울 수 있게 한다 (시험용 + 당일 비상용).
+# cloudflare 로 넘기면 FLUX.1 schnell 로 만든다. 품질은 떨어지지만 싸고,
+# fal 이 막혔을 때 아무것도 못 만드는 것보다는 낫다.
 PROVIDER="${CAMP_MEDIA_PROVIDER:-$PROVIDER}"
+if [ "$PROVIDER" = "cloudflare" ]; then
+  case "$KIND" in
+    그림|대표) MODEL="@cf/black-forest-labs/flux-1-schnell"; EXTRA='' ;;
+  esac
+fi
 
 COUNT_DIR="$TEAM_DIR/.camp"
 COUNT_FILE="$COUNT_DIR/counts"
@@ -142,7 +157,7 @@ else
   fi
   ERR="$(mktemp)"
   if "$PY" "$HERE/media-gen.py" --provider "$PROVIDER" --model "$MODEL" \
-        --prompt "$PROMPT" --out "$DEST" --steps "$STEPS" --seconds "$SECS" 2>"$ERR"; then
+        --prompt "$PROMPT" --out "$DEST" --steps "$STEPS" --extra "$EXTRA" 2>"$ERR"; then
     rm -f "$ERR"
   else
     MSG="$(tail -1 "$ERR" 2>/dev/null)"
