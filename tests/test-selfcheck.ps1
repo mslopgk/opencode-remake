@@ -61,7 +61,9 @@ try {
     Assert-Contains $failLog '다시 실행' '스스로 해 볼 절차를 안내'
     Assert-Contains $failLog '인터넷' '인터넷 확인을 먼저 안내'
     Assert-Contains $failLog '기록 파일' '기록 파일 위치를 알려 줌'
-    Assert-Contains $failLog '운영팀' '연락 경로를 알려 줌'
+    # 문의 창구를 두지 않는다. 혼자 붙들고 있게 하지 않고 캠프 당일에 처리한다.
+    Assert-Contains $failLog '그만하세요' '두 번 실패하면 그만하라고 말한다'
+    Assert-Contains $failLog '그냥 오시면' '캠프 당일 처리를 안내'
 }
 finally {
     Remove-Item Env:\CAMP_SELFCHECK_FAKE -ErrorAction SilentlyContinue

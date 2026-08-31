@@ -269,19 +269,18 @@ function Invoke-SelfCheck {
 
     Write-Fail ('안 된 것: ' + ($fails -join ', '))
     Write-Note '아래를 확인해 보세요.'
-    # 집에서 미리 설치하는 경우가 많다. "선생님을 불러 주세요" 는 그때 쓸 수 없다.
-    # 그래서 스스로 해 볼 수 있는 것을 먼저 말하고, 그다음 연락처를 준다.
+    # 집에서 혼자 설치하는 상황이다. 물어볼 사람이 없다.
+    # 그래서 스스로 해 볼 수 있는 것만 알려 주고, 안 되면 그만하게 한다.
+    # 별도 문의 창구를 두지 않는다 — 캠프 당일에 처리한다.
     Write-Note ''
     Write-Note '[1] 인터넷이 연결됐는지 확인해 주세요.'
     Write-Note '[2] 바탕화면의 "창의디자인캠프 설치" 를 한 번 더 실행해 주세요.'
     Write-Note '    (이미 깔린 것은 건너뛰므로 빠르게 끝납니다)'
     Write-Note '[3] 그 뒤에 "점검" 을 다시 실행해 주세요.'
     Write-Note ''
-    Write-Note '두 번 해도 안 되면 아래로 알려 주세요.'
-    Write-Note ('  기록 파일: ' + (Join-Path $env:USERPROFILE '창의디자인캠프'))
-    Write-Note '  운영팀: (연락처를 여기에 넣으세요)'
-    Write-Note ''
-    Write-Note '캠프 당일 아침에도 도와드립니다. 그냥 오셔도 괜찮습니다.'
+    Write-Note '두 번 해도 안 되면 여기서 그만하세요.'
+    Write-Note '캠프 첫날 아침에 5분이면 고쳐 드립니다. 그냥 오시면 됩니다.'
+    Write-Note ('(기록 파일은 ' + (Join-Path $env:USERPROFILE '창의디자인캠프') + ' 에 있습니다)')
     return 1
 }
 
