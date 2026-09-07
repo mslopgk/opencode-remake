@@ -42,12 +42,13 @@ description: 발표자료 index.html 의 구조와 편집 규칙. 슬라이드�
 아래에서 올라온다. 학생이 "움직이게 해줘" 라고 하면 이미 되고 있다고
 알려주고 특별한 효과를 원하는지 물어본다.
 
-## 슬라이드 하나의 구조
+## 지켜야 하는 것은 딱 이것뿐이다
+
+합치기가 되려면 한 장이 `<section>` 으로 싸여 있으면 된다. 그게 전부다.
 
 ```html
 <section class="slide">
-  <h2>제목</h2>
-  <p>내용</p>
+  ... 여기 안은 자유다 ...
 </section>
 ```
 
@@ -56,11 +57,125 @@ description: 발표자료 index.html 의 구조와 편집 규칙. 슬라이드�
 - 슬라이드를 추가하면 아래 스크립트가 개수를 자동으로 센다. 숫자를 직접
   고치지 않는다.
 
-## 글 양 규칙
+## `<section>` 안은 마음대로 짜도 된다
 
-- 한 슬라이드에 글은 최대 5줄.
+**"제목 하나 + 글 몇 줄" 만 만들지 마라.** 그렇게 하면 열다섯 조가 전부
+똑같이 생긴 발표자료를 낸다. 조마다 달라야 한다.
+
+`<section>` 안에는 무엇을 넣어도 된다. 예를 들면:
+
+- 그림을 화면 가득 깔고 글자를 그 위에 얹기
+- 왼쪽엔 그림, 오른쪽엔 설명 (2단)
+- 숫자 하나만 아주 크게
+- 사진 여러 장을 격자로 늘어놓기
+- 말풍선, 화살표, 순서도
+- 표, 그래프 (직접 그린 막대여도 좋다)
+- 글자만으로 꽉 채운 표지
+
+**자기 `<section>` 안에는 `<style>` 을 넣어도 된다.** 그 장에만 적용되는
+색·배치를 만들 수 있다. 다른 친구 장에는 영향이 없다.
+(`<section>` 밖에 쓴 것은 합칠 때 사라진다. 반드시 안에 넣는다)
+
+```html
+<section class="slide">
+  <style>
+    .my-hero { display:grid; grid-template-columns: 1fr 1fr; gap: 4vmin; }
+  </style>
+  <div class="my-hero"> ... </div>
+</section>
+```
+
+학생이 "어떻게 만들까?" 하고 물으면 **서로 다른 짜임 두세 개를 그려서
+보여주고 고르게 한다.** 먼저 정해 주지 마라.
+
+## 남아 있는 예시 장은 지운다
+
+`index.html` 을 처음 열면 표지 한 장만 들어 있다. 그 표지의
+`캠페인 이름을 여기에` 와 `00조 팀이름` 은 **반드시 조 것으로 바꾼다.**
+
+예전에 만든 팀 폴더에는 예시 장이 여러 개 남아 있을 수 있다
+(`우리가 찾은 문제`, `우리의 질문`, `이렇게 실천해요` 같은 것들).
+조가 자기 장을 만들었으면 **그 예시 장들은 지운다.** 남겨 두면
+발표할 때 빈 껍데기 장이 중간에 끼어 나온다.
+
+## 사진과 영상을 배경으로 크게 써라
+
+이게 제일 중요하다. **글자만 가운데 놓인 장을 만들지 마라.** 밋밋하고,
+발표할 때 사람들이 안 본다. 우리가 만든 그림과 영상이 주인공이다.
+
+`assets/` 에 있는 것을 화면 가득 깔고 그 위에 글자를 얹는다.
+아래는 그대로 복사해서 파일 이름만 바꾸면 되는 것들이다.
+
+### 사진을 배경으로 (가장 많이 쓴다)
+
+```html
+<section class="slide" style="background:url('assets/그림-1.jpg') center/cover; padding:0;">
+  <div style="position:absolute; inset:0; background:rgba(0,0,0,.45);"></div>
+  <div style="position:relative;">
+    <h1 style="color:#fff; text-shadow:0 .4vh 2vh rgba(0,0,0,.6);">바다를 지켜요</h1>
+    <p style="color:#fff;">3조 바다지킴이</p>
+  </div>
+</section>
+```
+
+검은 막(`rgba(0,0,0,.45)`)은 글자를 읽히게 한다. 사진이 밝으면 숫자를
+올리고, 어두우면 내린다. 글자가 안 읽히면 아무 소용이 없다.
+
+### 영상을 배경으로
+
+```html
+<section class="slide" style="padding:0; overflow:hidden;">
+  <video src="assets/영상-1.mp4" autoplay muted loop playsinline
+         style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;"></video>
+  <div style="position:absolute; inset:0; background:rgba(0,0,0,.4);"></div>
+  <div style="position:relative;">
+    <h1 style="color:#fff;">우리가 만든 영상</h1>
+  </div>
+</section>
+```
+
+`muted` 를 빼면 브라우저가 자동재생을 막는다. 반드시 넣는다.
+
+### 사진 반, 글 반
+
+```html
+<section class="slide" style="padding:0;">
+  <div style="position:absolute; inset:0; display:grid; grid-template-columns:1fr 1fr;">
+    <div style="background:url('assets/그림-2.jpg') center/cover;"></div>
+    <div style="display:flex; flex-direction:column; justify-content:center; padding:6vh 5vw; text-align:left;">
+      <h2>이런 문제가 있어요</h2>
+      <p>바닷가에 쓰레기가 많아요.</p>
+    </div>
+  </div>
+</section>
+```
+
+### 사진 여러 장 깔기
+
+```html
+<section class="slide" style="padding:0;">
+  <div style="position:absolute; inset:0; display:grid; grid-template-columns:repeat(3,1fr); gap:.6vh;">
+    <img src="assets/그림-1.jpg" style="width:100%; height:100%; object-fit:cover;">
+    <img src="assets/그림-2.jpg" style="width:100%; height:100%; object-fit:cover;">
+    <img src="assets/그림-3.jpg" style="width:100%; height:100%; object-fit:cover;">
+  </div>
+  <h2 style="position:relative; color:#fff; text-shadow:0 .4vh 2vh #000;">우리가 만든 것들</h2>
+</section>
+```
+
+### 기억할 것
+
+- `padding:0` 을 주면 화면 끝까지 채워진다. 안 주면 가장자리에 여백이 남는다.
+- 배경 위 글자는 **흰색 + 그림자**가 거의 항상 잘 읽힌다.
+- 파일 이름은 `assets/` 폴더를 열어 실제로 있는 것을 쓴다. 지어내지 마라.
+- 그림이 아직 없으면 먼저 만들자고 권한다. 빈 화면에 글자만 넣지 마라.
+
+## 글 양
+
 - 초등학생이 발표하며 읽을 문장이다. 짧고 쉬운 말로 쓴다.
-- 제목은 `<h2>`, 본문은 `<p>` 또는 `<ul><li>`.
+- 한 장에 글이 너무 많으면 읽다가 발표가 끝난다. 대여섯 줄을 넘기면
+  두 장으로 나누자고 권한다. (규칙이 아니라 권유다)
+- 태그는 자유다. 제목에 `<h1>` 을 써도 되고, 글자 대신 그림만 있는 장도 좋다.
 
 ## 그림 넣기
 

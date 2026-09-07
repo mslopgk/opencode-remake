@@ -10,6 +10,30 @@
 # 손상된 파일은 절대 덮어쓰지 않는다. 앱 상태를 망가뜨리는 것이
 # 등록 실패보다 훨씬 나쁘다.
 
+# JSON 을 BOM 없이 쓴다.
+#
+# 왜 반드시 BOM 이 없어야 하는가 (실측 사고, student 계정 2026-09-01):
+#   PowerShell 5.1 의 `Set-Content -Encoding utf8` 은 파일 앞에
+#   EF BB BF (BOM) 를 붙인다. 우리가 읽을 때는 Get-Content -Encoding UTF8 이
+#   BOM 을 알아서 떼주므로 우리 테스트는 전부 통과했다.
+#
+#   그런데 앱은 electron-store 로 이 파일을 읽는다. 그 코드는
+#     get store() { try { JSON.parse(readFileSync(...,'utf8')) } catch(e) {
+#       if (e.code==='ENOENT') ...
+#       if (this.#options.clearInvalidConfig) ...   // 기본값 false
+#       throw error;                                // 그냥 던진다
+#     } }
+#   이고 생성자가 곧바로 this.store 를 읽는다. BOM 이 있으면
+#   JSON.parse 가 SyntaxError 를 던져 앱이 창을 만들기 전에 죽는다.
+#   증상: "캠프 시작" 을 눌러도 아무 일도 안 일어난다.
+#   런처 기록에는 "앱이 열렸어요!" 가 찍힌다 (확인을 안 했으므로).
+#
+# 그래서 BOM 없는 UTF-8 로만 쓴다. Set-Content 를 쓰지 마라.
+function Write-JsonNoBom([string]$Path, [string]$Text) {
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Text, $enc)
+}
+
 function Get-AppStateDir {
     if ($env:CAMP_APPSTATE_DIR) { return $env:CAMP_APPSTATE_DIR }
     return (Join-Path $env:APPDATA 'ai.opencode.desktop')
@@ -79,7 +103,7 @@ function Add-RegisteredProject([Parameter(Mandatory=$true)][string]$Path) {
     $server.projects.local = @($server.projects.local) + @($entry)
 
     $g | Add-Member -NotePropertyName 'server' -NotePropertyValue ($server | ConvertTo-Json -Depth 20 -Compress) -Force
-    ($g | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $file -Encoding utf8
+    Write-JsonNoBom -Path $file -Text ($g | ConvertTo-Json -Depth 20)
     return $true
 }
 
@@ -95,6 +119,6 @@ function Set-OnboardingComplete {
     if ($null -eq $s) { $s = ('{}' | ConvertFrom-Json) }
 
     $s | Add-Member -NotePropertyName 'firstLaunchOnboardingComplete' -NotePropertyValue $true -Force
-    ($s | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $file -Encoding utf8
+    Write-JsonNoBom -Path $file -Text ($s | ConvertTo-Json -Depth 20)
     return $true
 }

@@ -18,11 +18,15 @@ assert_contains "$H" 'charset="utf-8"' "UTF-8 인코딩"
 assert_not_contains "$H" "npm install" "빌드 도구 없음"
 
 # 슬라이드 구조
-assert_contains "$H" 'class="slide"' "slide 클래스 존재"
-# 첫 장은 class="slide on" 이므로 닫는 따옴표를 포함해 세면 안 된다
+assert_contains "$H" 'class="slide' "slide 클래스 존재"
+# 표지 한 장만 둔다.
+#
+# 왜 (실측, 2026-09-05 현장): 예시를 일곱 장 넣어 두었더니 열다섯 조가
+# 전부 그 일곱 장을 조금씩만 고쳐서 똑같이 생긴 발표자료를 만들어 왔다.
+# 빈 화면이 되면 안 되니 표지 한 장만 남기고, 나머지는 조가 만든다.
 N=$(grep -o 'class="slide' "$T" | wc -l | tr -d ' ')
-if [ "$N" -ge 7 ]; then pass "기본 슬라이드가 7장 이상 ($N)"
-else fail "기본 슬라이드가 부족 ($N, 7 이상 필요)"; fi
+if [ "$N" -eq 1 ]; then pass "기본 슬라이드는 표지 한 장 ($N)"
+else fail "기본 슬라이드가 $N 장이다. 표지 한 장이어야 한다"; fi
 
 # 테마 4종
 assert_contains "$H" ":root" "CSS 변수 루트"

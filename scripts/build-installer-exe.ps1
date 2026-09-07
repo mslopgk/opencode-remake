@@ -143,6 +143,42 @@ static class Program
         return rc;
     }
 
+    // zip 을 한 개씩 덮어쓰며 푼다.
+    //
+    // ZipFile.ExtractToDirectory 는 대상 파일이 하나라도 있으면
+    // IOException 을 던지고 멈춘다. 다시 설치할 때 흔히 걸린다.
+    static void ExtractOverwrite(string zipPath, string dest)
+    {
+        using (var zip = ZipFile.OpenRead(zipPath))
+        {
+            string root = Path.GetFullPath(dest);
+            foreach (var entry in zip.Entries)
+            {
+                string target = Path.GetFullPath(Path.Combine(root, entry.FullName));
+
+                // zip 안의 경로가 대상 폴더를 벗어나면 무시한다 (경로 탈출 방지)
+                if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase)) { continue; }
+
+                if (entry.FullName.EndsWith("/") || entry.FullName.EndsWith("\\"))
+                {
+                    Directory.CreateDirectory(target);
+                    continue;
+                }
+
+                string parent = Path.GetDirectoryName(target);
+                if (parent != null) { Directory.CreateDirectory(parent); }
+
+                // 읽기전용 표시가 붙어 있으면 떼야 덮어쓸 수 있다
+                if (File.Exists(target))
+                {
+                    try { File.SetAttributes(target, FileAttributes.Normal); }
+                    catch { }
+                }
+                entry.ExtractToFile(target, true);
+            }
+        }
+    }
+
     static void Unpack()
     {
         string dest = DestDir();
@@ -152,7 +188,7 @@ static class Program
         if (Directory.Exists(dest))
         {
             try { Directory.Delete(dest, true); }
-            catch { /* 쓰는 중인 파일이 있으면 덮어쓰기로 진행 */ }
+            catch { /* 쓰는 중인 파일이 있으면 아래에서 덮어쓴다 */ }
         }
         Directory.CreateDirectory(dest);
 
@@ -172,7 +208,11 @@ static class Program
                     int n;
                     while ((n = src.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); }
                 }
-                ZipFile.ExtractToDirectory(tmpZip, dest);
+                // ExtractToDirectory 는 파일이 이미 있으면 예외를 던진다.
+                // 위의 Delete 가 실패했을 때(점검 창을 열어 둔 채로 다시
+                // 설치하는 경우) 여기서 통째로 죽어 "준비하지 못했어요" 가 된다.
+                // 그래서 한 개씩 덮어쓰며 푼다.
+                ExtractOverwrite(tmpZip, dest);
             }
             finally
             {
@@ -199,6 +239,16 @@ function Invoke-BuildInstallerExe([string]$RepoDir) {
     }
     Write-Host ('컴파일러: ' + $csc)
 
+    # 이 껍데기(SFX)는 일부러 관리자 권한을 요구하지 않는다.
+    #
+    # 왜 (실측, 2026-09-05): 짐은 %LOCALAPPDATA% 에 푼다. 여기에 승격을 걸면,
+    # 학생 계정이 관리자가 아닐 때 학생이 부모님 계정으로 UAC 를 넘기는 순간
+    # 393MB 가 부모님 프로필에 풀린다. 학생 쪽에는 다시 실행할 파일조차 없다.
+    # 압축을 푸는 데는 원래 관리자 권한이 필요 없다.
+    #
+    # 관리자 권한은 안쪽 '창의디자인캠프 설치.exe' 가 요구한다. 그래서 UAC 는
+    # 여전히 시작하자마자 뜨고, 취소하면 이 껍데기가 잡아서 화면에 알려 준다.
+
     $icon = Join-Path $RepoDir 'dist\scripts\camp.ico'
     if (-not (Test-Path -LiteralPath $icon -PathType Leaf)) {
         Write-Host '아이콘이 없습니다. make-icon.ps1 을 먼저 실행하세요.'
@@ -214,7 +264,16 @@ function Invoke-BuildInstallerExe([string]$RepoDir) {
         $csFile = Join-Path $work 'Setup.cs'
         [System.IO.File]::WriteAllText($csFile, $CsSource, (New-Object System.Text.UTF8Encoding($true)))
 
-        $outExe = Join-Path $RepoDir 'camp2026-setup.exe'
+        # 오프라인 짐이 들어 있으면 이름을 달리 한다. 두 판을 헷갈리면
+        # 학생에게 잘못된 것을 주게 된다.
+        $이름 = 'camp2026-setup.exe'
+        if (Test-Path -LiteralPath (Join-Path $RepoDir 'dist\offline') -PathType Container) {
+            $이름 = 'camp2026-setup-offline.exe'
+        }
+        if (Test-Path -LiteralPath (Join-Path $RepoDir 'dist\legacy.flag') -PathType Leaf) {
+            $이름 = 'camp2026-setup-1703.exe'
+        }
+        $outExe = Join-Path $RepoDir $이름
         if (Test-Path -LiteralPath $outExe) { Remove-Item -LiteralPath $outExe -Force }
 
         Write-Host '컴파일하고 있습니다 (짐이 커서 1~2분 걸립니다)...'
@@ -243,7 +302,7 @@ function Invoke-BuildInstallerExe([string]$RepoDir) {
         }
 
         $mb = (Get-Item $outExe).Length / 1MB
-        Write-Host ('만들었어요: camp2026-setup.exe (' + [math]::Round($mb, 1) + ' MB)')
+        Write-Host ('만들었어요: ' + $이름 + ' (' + [math]::Round($mb, 1) + ' MB)')
         return 0
     }
     finally {

@@ -63,6 +63,8 @@ function Test-DistComplete([string]$DistDir) {
         'scripts\orchestrator.ps1',
         'scripts\selfcheck.ps1',
         'scripts\launcher.ps1',
+        'scripts\lib-uia.ps1',
+        'scripts\lib-shellfix.ps1',
         'scripts\lib-gui.ps1',
         'scripts\gui-install.ps1',
         'scripts\gui-check.ps1',
@@ -95,6 +97,43 @@ function Test-DistComplete([string]$DistDir) {
     foreach ($r in ($required + $bundleFiles + $secretFiles)) {
         if (-not (Test-Path -LiteralPath (Join-Path $DistDir $r))) { $missing += $r }
     }
+
+    # 함정(실측 사고, 2026-09-05 현장): 맥에서 .sh 가 CRLF 면 bash 가 모든 줄
+    # 끝에 캐리지리턴(CR)을 붙인다. CFG="$HOME/.config/opencode" 같은 줄이 그대로
+    # "opencode<CR>" 폴더를 만들어서, 설정도 열쇠도 엉뚱한 곳으로 들어간다.
+    # 학생 화면에는 "캠프 설정이 덜 들어갔어요 (도우미 0, 명령 0)" 만 뜬다.
+    # 윈도우 git bash 는 LF 를 잘 읽으므로 전부 LF 로 통일한다.
+    foreach ($ㅅ in @(Get-ChildItem -LiteralPath (Join-Path $DistDir 'tools') -File -ErrorAction SilentlyContinue)) {
+        if ($ㅅ.Extension -notin @('.sh', '.py')) { continue }
+        $바이트 = [System.IO.File]::ReadAllBytes($ㅅ.FullName)
+        for ($i = 0; $i -lt $바이트.Length - 1; $i++) {
+            if ($바이트[$i] -eq 13 -and $바이트[$i + 1] -eq 10) {
+                $missing += ('tools\' + $ㅅ.Name + ' 이 윈도우 줄바꿈(CRLF)입니다. 맥에서 깨집니다.')
+                break
+            }
+        }
+    }
+
+    # 함정(실측 사고, 2026-09-05): exe 는 불러올 스크립트 목록을 자기 안에
+    # 박아 둔다. 스크립트를 새로 만들고 build-exe.ps1 을 안 돌리면 exe 는
+    # 없는 함수를 부르다 죽는다. 창도 없어서 학생은 아무것도 못 본다.
+    # 그래서 스크립트가 exe 보다 새것이면 빌드를 멈춘다.
+    $exe목록 = @('창의디자인캠프 설치.exe','캠프 시작.exe','점검.exe','깃허브 연결.exe','발표자료 보기.exe')
+    $가장오래된 = $null
+    foreach ($e in $exe목록) {
+        $f = Get-Item -LiteralPath (Join-Path $DistDir $e) -ErrorAction SilentlyContinue
+        if ($null -eq $f) { continue }
+        if ($null -eq $가장오래된 -or $f.LastWriteTime -lt $가장오래된) { $가장오래된 = $f.LastWriteTime }
+    }
+    if ($null -ne $가장오래된) {
+        $새스크립트 = @(Get-ChildItem -LiteralPath (Join-Path $DistDir 'scripts') -Filter *.ps1 -ErrorAction SilentlyContinue |
+                        Where-Object { $_.LastWriteTime -gt $가장오래된 })
+        if ($새스크립트.Count -gt 0) {
+            $missing += ('실행파일이 낡았습니다. scripts\build-exe.ps1 을 먼저 실행하세요. (더 새로운 스크립트: ' +
+                         (($새스크립트 | Select-Object -First 4 | ForEach-Object { $_.Name }) -join ', ') + ')')
+        }
+    }
+
     return @{ Ok = ($missing.Count -eq 0); Missing = $missing }
 }
 
@@ -102,6 +141,14 @@ function Test-DistComplete([string]$DistDir) {
 if ($MyInvocation.InvocationName -ne '.') {
     $repo = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
     $rc = Invoke-BuildDist -RepoDir $repo
-    if ($rc -eq 0) { Write-Host '배포판 빌드 완료: dist\preset, dist\template' }
+    if ($rc -eq 0) {
+        $v = Test-DistComplete -DistDir (Join-Path $repo 'dist')
+        if (-not $v.Ok) {
+            Write-Host '배포판이 아직 덜 됐습니다:'
+            foreach ($m in $v.Missing) { Write-Host ('  - ' + $m) }
+            exit 1
+        }
+        Write-Host '배포판 빌드 완료: dist\preset, dist\template'
+    }
     exit $rc
 }

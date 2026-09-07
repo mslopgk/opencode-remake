@@ -5,10 +5,24 @@
   "default_agent": "도우미",
   "autoupdate": false,
   "share": "disabled",
-  "instructions": ["우리팀.md"],
+  "instructions": [
+    "우리팀.md"
+  ],
   "permission": {
+    "read": "allow",
     "edit": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
     "bash": "allow",
-    "webfetch": "deny"
+    "task": "allow",
+    "external_directory": "allow",
+    "todowrite": "allow",
+    "question": "allow",
+    "lsp": "allow",
+    "doom_loop": "allow",
+    "skill": "allow",
+    "webfetch": "allow",
+    "websearch": "allow"
   }
 }

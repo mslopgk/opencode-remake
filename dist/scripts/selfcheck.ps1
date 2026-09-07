@@ -8,6 +8,35 @@ $script:CommandNames = @('시작','아이디어','포스터','영상','슬라이
 
 function Get-FakeMode { return $env:CAMP_SELFCHECK_FAKE }
 
+# 인터넷 없이 설치한 판인지 본다.
+#
+# 오프라인 판은 설치할 때 표를 남긴다. 그 판에서는 인터넷이 필요한 두 항목을
+# 빨간불로 띄우면 안 된다. 학생은 잘못한 게 없는데 실패로 보이기 때문이다.
+# 아주 오래된 윈도우인지 본다.
+#
+# 왜 필요한가 (실측, 2026-09-05 현장, Windows 10 1703):
+#   opencode CLI 는 ClosePseudoConsole 이라는 윈도우 기능을 쓴다.
+#   그건 1809 에서 처음 생겼다. 1703 에서 그 exe 를 실행하면 윈도우가
+#   "프로시저 시작 지점을 찾을 수 없습니다" 라는 영어투 오류 창을 띄운다.
+#   학생 화면에 그 창이 뜨면 그걸로 끝이다.
+#   그래서 옛 윈도우에서는 CLI 를 쓰는 항목을 아예 부르지 않는다.
+function Test-CampOldWindows {
+    if ($env:CAMP_LEGACY -eq '1') { return $true }
+    $방 = Join-Path $env:USERPROFILE '창의디자인캠프'
+    if (Test-Path -LiteralPath (Join-Path $방 '옛윈도우.txt') -PathType Leaf) { return $true }
+    # 표가 없어도 윈도우 자체가 옛것이면 같은 사고가 난다. 직접 본다.
+    $build = 0
+    try { $build = [int][Environment]::OSVersion.Version.Build } catch { $build = 0 }
+    return ($build -gt 0 -and $build -lt 17763)
+}
+
+function Test-CampOffline {
+    if ($env:CAMP_OFFLINE -eq '1') { return $true }
+    $방 = Join-Path $env:USERPROFILE '창의디자인캠프'
+    return (Test-Path -LiteralPath (Join-Path $방 '오프라인.txt') -PathType Leaf)
+}
+
+
 # Windows PowerShell 5.1 의 Invoke-RestMethod 는 charset 이 없는 응답을
 # ISO-8859-1 로 디코딩한다. opencode 서버는 Content-Type: application/json 을
 # charset 없이 보내므로 한국어 에이전트·명령 이름이 통째로 깨진다
@@ -140,6 +169,61 @@ function Test-DeepSeek {
     }
 }
 
+# 캠프 앱이 진짜 깔렸는지, .sh 도구를 돌릴 셸이 잡혔는지 본다.
+#
+# 왜 필요한가 (감사에서 나옴):
+#   설치 계획은 "번들에 있는 파일" 만 넣는다. 백신이 앱 설치 파일을
+#   격리하면 그 단계가 조용히 빠지는데, 점검은 앱 설치 여부를 한 번도
+#   안 봤다. 그래서 "준비 끝!" 초록불이 뜨고, 캠프 당일 아침에야
+#   앱이 없다는 걸 안다. 가장 늦게 발견되는 최악의 실패다.
+#
+#   셸도 마찬가지다. 못 잡으면 그림·영상·합치기·올리기가 전부
+#   "이 .sh 파일을 어떤 앱으로 열까요?" 창에서 끝난다.
+function Test-CampApp {
+    $fake = Get-FakeMode
+    if ($fake -eq 'ok' -or $fake -eq 'partial') { return @{ Ok = $true; Where = '(연습)' } }
+    if ($fake -eq 'fail') { return @{ Ok = $false; Where = '앱이 없어요' } }
+
+    $exe = Join-Path $env:LOCALAPPDATA 'Programs'
+    $exe = Join-Path $exe '@opencode-aidesktop'
+    $exe = Join-Path $exe 'OpenCode.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+        return @{ Ok = $false; Where = '앱이 안 깔렸어요' }
+    }
+
+    $cfg = Join-Path $env:USERPROFILE '.config'
+    $cfg = Join-Path $cfg 'opencode'
+    $cfg = Join-Path $cfg 'opencode.json'
+    $셸 = $null
+    try { $셸 = (Get-Content -LiteralPath $cfg -Raw -Encoding UTF8 | ConvertFrom-Json).shell } catch { }
+    if ([string]::IsNullOrWhiteSpace($셸) -or -not (Test-Path -LiteralPath $셸 -PathType Leaf)) {
+        return @{ Ok = $false; Where = '만들기 도구를 돌릴 준비가 덜 됐어요' }
+    }
+    return @{ Ok = $true; Where = '' }
+}
+
+# 진짜 파이썬이 있는지 본다.
+#
+# 윈도우는 파이썬이 없어도 python.exe / python3.exe 를 WindowsApps 에
+# 심어 둔다. 스토어를 열어 주는 껍데기다. 이름만 보면 반드시 속는다.
+# 그래서 (1) WindowsApps 경로는 버리고 (2) 실제로 실행해 본다.
+function Test-RealPython {
+    foreach ($n in @('python.exe', 'py.exe')) {
+        foreach ($c in @(Get-Command $n -CommandType Application -ErrorAction SilentlyContinue)) {
+            $src = ''
+            try { $src = [string]$c.Source } catch { }
+            if ($src -eq '') { continue }
+            if ($src -like '*\WindowsApps\*') { continue }
+            try {
+                $global:LASTEXITCODE = 1
+                $null = & $src '-c' 'pass' 2>$null
+                if ($LASTEXITCODE -eq 0) { return $true }
+            } catch { }
+        }
+    }
+    return $false
+}
+
 # 그림·영상 만들기가 연결되는지 본다.
 #
 # 그림을 실제로 만들지 않는다. 한 장 $0.0336 이라 60명이 점검만 해도 $2 다.
@@ -166,6 +250,17 @@ function Test-MediaKeys {
     }
     $key = Get-CampMediaKey 'GEMINI_API_KEY'
     if (-not $key) { return @{ Ok = $false; Where = '열쇠가 비어 있어요' } }
+
+    # 열쇠가 멀쩡해도 파이썬이 없으면 그림은 한 장도 안 나온다.
+    # media-gen.py 를 돌리는 게 파이썬이기 때문이다.
+    #
+    # 이걸 안 보다가 사고가 났다 (student 계정, 2026-09-01):
+    #   윈도우가 미리 심어 둔 껍데기 python.exe 때문에 인스톨러가
+    #   파이썬을 건너뛰었는데, 점검은 초록불이었다.
+    #   학생은 그림을 만들려는 순간에야 알게 된다.
+    if (-not (Test-RealPython)) {
+        return @{ Ok = $false; Where = '파이썬이 없어요' }
+    }
 
     try {
         # 모델 목록 조회는 돈이 안 든다. 열쇠가 틀리면 400/403 이 온다.
@@ -224,12 +319,35 @@ function Invoke-SelfCheck {
     Write-Step '설치가 잘 됐는지 확인할게요. 조금만 기다려 주세요.'
     $fails = @()
 
+    # 1번은 "깔렸는지" 를 통째로 본다. 항목 수를 6개로 유지하는 이유는
+    # 학생이 보는 영상이 "여섯 개 초록불" 이라고 말하기 때문이다.
+    # 여기에 캠프 앱과 셸까지 넣어야, 앱이 없는데 초록불이 뜨는 일이 없다.
+    $옛윈도우 = Test-CampOldWindows
+
     Write-Step '1/6 도구가 깔렸는지 확인 중'
-    if (Test-OpencodeVersion -Expected '1.18.20') { Write-Ok '도구가 깔렸어요' }
-    else { Write-Fail '도구가 제대로 안 깔렸어요'; $fails += '도구' }
+    $앱 = Test-CampApp
+    if ($옛윈도우) {
+        # CLI 를 부르면 윈도우가 오류 창을 띄운다. 파일이 있는지만 본다.
+        if ($앱.Ok) { Write-Ok '도구가 깔렸어요' }
+        else { Write-Fail ('도구가 제대로 안 깔렸어요 — ' + $앱.Where); $fails += '도구' }
+    }
+    elseif (-not (Test-OpencodeVersion -Expected '1.18.20')) {
+        Write-Fail '도구가 제대로 안 깔렸어요'; $fails += '도구'
+    }
+    elseif (-not $앱.Ok) {
+        Write-Fail ('도구가 제대로 안 깔렸어요 — ' + $앱.Where); $fails += '도구'
+    }
+    else { Write-Ok '도구가 깔렸어요' }
 
     Write-Step '2/6 캠프 설정이 들어갔는지 확인 중'
-    $p = Test-PresetLoaded -Port 4399
+    if ($옛윈도우) {
+        # 이 확인도 CLI 로 서버를 띄운다. 옛 윈도우에서는 파일만 센다.
+        $설정방 = Join-Path $env:USERPROFILE '.config\opencode'
+        $도우미수 = @(Get-ChildItem -LiteralPath (Join-Path $설정방 'agent') -File -ErrorAction SilentlyContinue).Count
+        $명령수 = @(Get-ChildItem -LiteralPath (Join-Path $설정방 'command') -File -ErrorAction SilentlyContinue).Count
+        $p = @{ Ok = ($도우미수 -ge 4 -and $명령수 -ge 11); Agents = $도우미수; Commands = $명령수 }
+    }
+    else { $p = Test-PresetLoaded -Port 4399 }
     if ($p.Ok) { Write-Ok '캠프 설정이 들어갔어요' }
     else {
         Write-Fail ('캠프 설정이 덜 들어갔어요 (도우미 ' + $p.Agents + '/4, 명령 ' + $p.Commands + '/11)')
@@ -244,13 +362,29 @@ function Invoke-SelfCheck {
         $fails += '도구파일'
     }
 
+    $오프라인 = Test-CampOffline
+
+    # 오프라인 판은 먼저 해 보고, 안 되면 빨간불 대신 "나중에" 로 넘긴다.
+    # 인터넷이 있으면 그대로 초록불이 되고, 없으면 학생을 겁주지 않는다.
     Write-Step '4/6 AI 도우미가 연결되는지 확인 중'
-    if (Test-DeepSeek) { Write-Ok 'AI 도우미가 연결됐어요' }
+    if ($옛윈도우) {
+        Write-Note '이 윈도우에서는 여기서 확인할 수 없어요. 캠프 시작을 눌러 직접 해 보세요.'
+    }
+    elseif (Test-DeepSeek) { Write-Ok 'AI 도우미가 연결됐어요' }
+    elseif ($오프라인) { Write-Note 'AI 도우미는 인터넷을 연결한 뒤에 확인해요 (지금은 건너뜁니다)' }
     else { Write-Fail 'AI 도우미가 연결되지 않았어요'; $fails += 'AI' }
 
     Write-Step '5/6 그림 만들기가 연결되는지 확인 중'
     $h = Test-MediaKeys
+    # 인터넷과 상관없는 실패는 오프라인 판에서도 봐주면 안 된다.
+    # 특히 "파이썬이 없어요" 는 껍데기 파이썬 사고 때문에 일부러 넣은 검사인데,
+    # 오프라인 면제가 그걸 통째로 삼키면 그림이 한 장도 안 나오는데 초록불이 뜬다.
+    $로컬실패 = @('열쇠 파일이 없어요', '열쇠가 비어 있어요', '파이썬이 없어요')
     if ($h.Ok) { Write-Ok '그림 만들기가 연결됐어요' }
+    elseif ($로컬실패 -contains $h.Where) {
+        Write-Fail ('그림 만들기가 연결되지 않았어요 — ' + $h.Where); $fails += '그림'
+    }
+    elseif ($오프라인) { Write-Note '그림 만들기도 인터넷을 연결한 뒤에 확인해요 (지금은 건너뜁니다)' }
     else {
         if ($h.Where) { Write-Fail ('그림 만들기가 연결되지 않았어요 — ' + $h.Where) }
         else { Write-Fail '그림 만들기가 연결되지 않았어요' }
@@ -264,6 +398,13 @@ function Invoke-SelfCheck {
     Write-Host ''
     if ($fails.Count -eq 0) {
         Write-Ok '준비 끝! 이제 캠프시작을 눌러서 시작하면 돼요.'
+        if ($옛윈도우) {
+            Write-Note '(아주 오래된 윈도우예요. 캠프 시작을 눌러 앱이 열리는지 꼭 확인해 주세요)'
+            Write-Note '앱이 안 열리면 그 노트북으로는 어렵습니다. 캠프에서 다른 노트북을 빌려 드려요.'
+        }
+        if ($오프라인) {
+            Write-Note '(인터넷 없이 설치한 판이에요. 캠프에서 인터넷을 연결하면 그대로 쓸 수 있어요)'
+        }
         return 0
     }
 

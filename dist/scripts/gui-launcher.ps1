@@ -50,11 +50,13 @@ function Show-CampLauncher([string]$TemplateDir) {
 
     $rows = New-CampStepList -Panel $steps -Titles @('작업 폴더 준비', '앱에 등록하기', '앱 열기')
     $script:LauncherRows = $rows
+    $script:LauncherNotes = @()
 
     $work = {
         . "$($Shared.ScriptDir)\lib-log.ps1"
         . "$($Shared.ScriptDir)\lib-appstate.ps1"
         . "$($Shared.ScriptDir)\lib-team.ps1"
+        . "$($Shared.ScriptDir)\lib-uia.ps1"
         . "$($Shared.ScriptDir)\launcher.ps1"
         $q = $Shared.Queue
         Set-CampLogSink { param($level, $msg) $q.Enqueue(@{ level = $level; msg = $msg }) }
@@ -95,20 +97,41 @@ function Show-CampLauncher([string]$TemplateDir) {
                 Set-CampStepState -Row $script:LauncherRows['앱에 등록하기'] -State $st
             }
             elseif ($msg -like '*앱을 열*' -or $msg -like '*앱이 열*') {
-                Set-CampStepState -Row $script:LauncherRows['앱 열기'] -State 'done'
+                # 실측 사고: 진행 문구('앱을 열고 있어요')와 실패 문구
+                # ('앱이 열리지 않았어요')가 같은 와일드카드에 걸려서
+                # 실패해도 초록 체크가 켜졌다. 등급으로 갈라야 한다.
+                $st = 'running'
+                if ($lvl -eq 'ok')   { $st = 'done' }
+                if ($lvl -eq 'fail') { $st = 'fail' }
+                Set-CampStepState -Row $script:LauncherRows['앱 열기'] -State $st
+            }
+            elseif ($lvl -eq 'note' -or $lvl -eq 'fail') {
+                # 안내·실패 문구가 창에 한 줄도 안 나오던 문제.
+                # 콘솔에만 찍히고 학생이 쓰는 .exe 화면에서는 사라졌다.
+                $script:LauncherNotes += $msg
             }
         }
         if ($shared.Done) {
             $timer.Stop()
+            $안내 = ($script:LauncherNotes -join '  ')
             if ($shared.Rc -eq 0) {
                 $heading.Text = '시작해요!'
                 $subText.Text = '도우미에게 그냥 말을 걸어 보세요.'
-                $hint.Text = ''
-                $win.Dispatcher.InvokeAsync({ Start-Sleep -Milliseconds 1200; $win.Close() }) | Out-Null
+                $hint.Text = $안내
+                if ([string]::IsNullOrWhiteSpace($안내)) {
+                    # 할 말이 없을 때만 스스로 닫는다. 안내가 있으면
+                    # 학생이 읽을 시간을 줘야 한다 (실측: 창이 1.2초 만에
+                    # 닫혀서 "새 세션을 누르세요" 안내가 통째로 사라졌다).
+                    $win.Dispatcher.InvokeAsync({ Start-Sleep -Milliseconds 1200; $win.Close() }) | Out-Null
+                }
+                else {
+                    $closeBtn.Visibility = 'Visible'
+                }
             }
             else {
-                $heading.Text = '문제가 생겼어요'
-                $subText.Text = '선생님을 불러 주세요.'
+                $heading.Text = '앱이 열리지 않았어요'
+                $subText.Text = '창을 닫고 "캠프 시작" 을 한 번 더 눌러 보세요.'
+                $hint.Text = $안내
                 $closeBtn.Visibility = 'Visible'
             }
         }

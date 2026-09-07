@@ -9,6 +9,10 @@
 _CAMP_MOCK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../mock" && pwd)"
 export PATH="$_CAMP_MOCK_DIR:$PATH"
 
+# 테스트가 브라우저 창을 열지 않게 막는다. camp-media.sh 는 성공하면
+# 만든 것을 브라우저로 띄우는데, 테스트가 그걸 하면 창이 쏟아진다.
+export CAMP_NO_SHOW=1
+
 _PASS=0
 _FAIL=0
 

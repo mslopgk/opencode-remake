@@ -18,6 +18,18 @@ MARK_BEGIN = '<!-- 여기에 친구들 슬라이드가 들어갑니다 (합쳐�
 MARK_END = '<!-- 친구들 슬라이드 끝 -->'
 
 
+def 읽기(경로):
+    """어떤 인코딩으로 저장했든 읽어 본다. 못 읽으면 None."""
+    with open(경로, 'rb') as f:
+        raw = f.read()
+    for enc in ('utf-8-sig', 'utf-8', 'cp949'):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            pass
+    return None
+
+
 def main():
     if len(sys.argv) < 2:
         sys.stderr.write('팀 폴더가 필요해요.\n')
@@ -47,8 +59,14 @@ def main():
     # slides/*.html 을 파일명 순으로 모은다
     files = sorted(glob.glob(os.path.join(team, 'slides', '*.html')))
     sections = []
+    건너뜀 = 0
     for f in files:
-        body = io.open(f, encoding='utf-8').read()
+        # 친구가 메모장으로 저장하면 cp949 로 저장된다. 그 한 장 때문에
+        # 나머지 세 명 슬라이드까지 통째로 못 합치면 안 된다(실측 확인).
+        body = 읽기(f)
+        if body is None:
+            건너뜀 += 1
+            continue
         found = re.findall(r'<section\b[^>]*>.*?</section>', body, re.S)
         if found:
             sections.extend(found)
@@ -72,4 +90,9 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:
+        # 영어 트레이스백과 파일 경로가 학생 화면에 나오면 안 된다.
+        sys.stderr.write('합치는 데 문제가 생겼어요. 선생님을 불러 주세요.' + chr(10))
+        sys.exit(5)

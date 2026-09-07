@@ -33,13 +33,24 @@ while IFS= read -r log; do
   TOTAL=$(awk -v a="$TOTAL" -v b="$money" 'BEGIN{printf "%.2f", a+b}')
 done < <(find "$ROOT" -type f -path '*/.camp/usage.log' 2>/dev/null | sort)
 
+# 어느 쪽에 돈이 나갔는지. 만든 곳은 네 번째 칸에 있다.
+# (2026-09-05 부터 기록된다. 그 전 것은 빈칸으로 나온다)
+PROV=$(find "$ROOT" -type f -path '*/.camp/usage.log' 2>/dev/null -exec cat {} + 2>/dev/null |
+  awk -F'	' 'NF>=5 && $4!=""{c[$4]++} END{for (k in c) printf "%s %d개  ", k, c[k]}')
+
+
 if [ "$FOUND" = "0" ]; then
   echo "아직 만든 것이 없어요."
   exit 0
 fi
 
+if [ -n "${PROV:-}" ]; then
+  echo
+  echo "만든 곳별: $PROV"
+fi
+
 printf -- '------------------------------------------------------------\n'
 printf '%-22s %8s %8s %8s %10s\n' "합계" "" "" "" "$TOTAL"
 echo
-echo "영상만 돈이 크게 나갑니다 (한 편 약 \$0.40)."
-echo "총액 한도는 fal.ai 대시보드의 spending cap 으로 거는 것이 안전합니다."
+echo "영상만 돈이 크게 나갑니다 (한 편 약 \$0.20)."
+echo "총액은 Google Cloud 결제 계정의 예산 알림으로 지켜보세요."
