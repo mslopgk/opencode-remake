@@ -45,10 +45,17 @@ KIND=""; PROMPT=""; TEAM_DIR=""; NAME=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --kind)     KIND="${2:-}"; shift 2 ;;
-    --prompt)   PROMPT="${2:-}"; shift 2 ;;
-    --team-dir) TEAM_DIR="${2:-}"; shift 2 ;;
-    --name)     NAME="${2:-}"; shift 2 ;;
+    # 함정: 값이 빠지면 shift 2 가 실패하고 아무것도 안 밀린다.
+    # set -e 가 없으니 while 이 영원히 돈다 — 학생 화면은 그냥 멈춘다.
+    # 그래서 값이 있는지 먼저 본다.
+    --kind)     [ $# -ge 2 ] || { echo "무엇을 만들지 정해 주세요." >&2; exit 4; }
+                KIND="$2"; shift 2 ;;
+    --prompt)   [ $# -ge 2 ] || { echo "어떤 것을 만들지 설명이 필요해요." >&2; exit 4; }
+                PROMPT="$2"; shift 2 ;;
+    --team-dir) [ $# -ge 2 ] || { echo "팀 폴더가 필요해요." >&2; exit 4; }
+                TEAM_DIR="$2"; shift 2 ;;
+    --name)     [ $# -ge 2 ] || { echo "파일 이름이 필요해요." >&2; exit 4; }
+                NAME="$2"; shift 2 ;;
     *) echo "알 수 없는 옵션이에요: $1" >&2; exit 4 ;;
   esac
 done
@@ -65,7 +72,7 @@ if [ -f "$KEYS_FILE" ]; then
   . "$KEYS_FILE"
   # source 만 하면 셸 변수로만 남고 자식 프로세스(python)에는 안 넘어간다.
   # 실제로 "열쇠가 없어요" 로 실패했다. 반드시 export 한다.
-  for k in GEMINI_API_KEY CF_ACCOUNT_ID CF_API_TOKEN FAL_KEY; do
+  for k in GEMINI_API_KEY CF_ACCOUNT_ID CF_API_TOKEN FAL_KEY FAL_KEYS; do
     eval "v=\${$k:-}"
     [ -n "$v" ] && export "$k=$v"
   done
@@ -88,7 +95,10 @@ case "$KIND" in
     EXT="jpg"; SIZE="2K"; ASPECT="16:9"; SECS=0; RES=""
     CREDITS="0.101"; EXTRA='' ;;
   영상)
-    PROVIDER="google"; MODEL="veo-3.1-lite-generate-preview"
+    # 싼 것부터. 할당량이 차면 media-gen.py 가 다음 것으로 알아서 넘어간다.
+    # 할당량은 모델마다 따로 센다(실측 2026-09-05: lite 만 429, 나머지는 정상).
+    PROVIDER="google"
+    MODEL="veo-3.1-lite-generate-preview,veo-3.1-fast-generate-preview,veo-3.1-generate-preview"
     EXT="mp4"; SIZE=""; ASPECT="16:9"; SECS=4; RES="720p"
     CREDITS="0.200"; EXTRA='' ;;
   *) echo "만들 수 있는 것은 그림, 대표, 영상이에요." >&2; exit 4 ;;
@@ -133,7 +143,36 @@ write_count() {
   mv "$tmp" "$COUNT_FILE"
 }
 
+# 영상은 한 조가 몇 개까지 만들 수 있는지 정한다.
+#
+# 왜 필요한가 (실측, 2026-09-05 현장):
+#   영상은 그림보다 훨씬 비싸다. 게다가 제일 싼 모델부터 차례로
+#   할당량이 찼다. 그래서 조마다 개수를 막아 지출의 위쪽을 정해 둔다.
+#
+#   진행자가 숫자를 바꿀 수 있다.  CAMP_VIDEO_MAX=1  처럼 준다.
+#   0 을 주면 영상을 아예 끈다.
+video_limit() {
+  case "${CAMP_VIDEO_MAX:-2}" in
+    ''|*[!0-9]*) echo 2 ;;
+    *) echo "${CAMP_VIDEO_MAX:-2}" ;;
+  esac
+}
+
 # 파일 이름 결정 (겹치지 않게 번호를 붙인다)
+# 영상은 한 조가 만들 수 있는 개수를 막는다. 비싸기 때문이다.
+if [ "$KIND" = "영상" ]; then
+  MAXV="$(video_limit)"
+  NOWV="$(read_count 영상)"
+  if [ "$MAXV" -le 0 ]; then
+    echo "오늘은 영상 대신 그림으로 만들어 볼까요?" >&2
+    exit 4
+  fi
+  if [ "$NOWV" -ge "$MAXV" ]; then
+    echo "우리 조는 영상을 벌써 ${NOWV}개 만들었어요. 그림으로 더 꾸며 볼까요?" >&2
+    exit 4
+  fi
+fi
+
 if [ -z "$NAME" ]; then
   case "$KIND" in
     그림) BASE="그림" ;;
@@ -141,9 +180,24 @@ if [ -z "$NAME" ]; then
     음악) BASE="음악" ;;
     영상) BASE="영상" ;;
   esac
+  # 이름만 고르고 파일은 8~35초 뒤에 생긴다. 그 사이에 시작한 다른 실행이
+  # 같은 빈 자리를 보고 같은 이름을 고른다. 그러면 세 장을 만들었는데
+  # 한 장만 남고, 도구는 세 번 다 "만들었어요" 라고 말한다(실측 확인).
+  # noclobber 의 > 는 O_EXCL 이라 자리를 원자적으로 잡는다.
+  # bash 는 한글 변수 이름을 못 쓴다. 이 프로젝트에서 이미 세 번 걸린 함정이다.
+  # 그리고 자리를 잡으려면 폴더가 먼저 있어야 한다.
+  mkdir -p "$TEAM_DIR/assets" 2>/dev/null
   n=1
-  while [ -e "$TEAM_DIR/assets/${BASE}-${n}.${EXT}" ]; do n=$((n+1)); done
-  NAME="${BASE}-${n}.${EXT}"
+  while :; do
+    CAND="$TEAM_DIR/assets/${BASE}-${n}.${EXT}"
+    if ( set -o noclobber; : > "$CAND" ) 2>/dev/null; then
+      NAME="${BASE}-${n}.${EXT}"; break
+    fi
+    n=$((n+1))
+    if [ "$n" -gt 999 ]; then
+      echo "만들지 못했어요. 잠시 뒤에 다시 해 볼까요?" >&2; exit 5
+    fi
+  done
 fi
 case "$NAME" in *.*) ;; *) NAME="${NAME}.${EXT}" ;; esac
 REL="assets/$NAME"
@@ -237,15 +291,58 @@ else
   # 파이썬이 한국어 메시지를 cp949 로 쓰면 아래 case 패턴이 안 맞는다(실측).
   # media-gen.py 안에서도 고정하지만 여기서도 한 번 더 못박는다.
   export PYTHONIOENCODING=utf-8
-  if "$PY" "$HERE/media-gen.py" --provider "$PROVIDER" --model "$MODEL" \
-        --prompt "$PROMPT" --out "$DEST" --kind "$KIND" \
-        --steps "$STEPS" --extra "$EXTRA" \
-        --seconds "$SECS" --size "$SIZE" \
-        --aspect "$ASPECT" --resolution "$RES" 2>"$ERR"; then
-    rm -f "$ERR"
-  else
+  # 만들 곳을 차례로 해 본다.
+  #
+  # 왜 (실측, 2026-09-05 현장): 요청수 제한은 만드는 곳마다, 모델마다,
+  # 열쇠마다 따로 센다. 구글 Veo 세 모델이 다 막힌 순간에도 fal 은 멀쩡했다.
+  # 그래서 싼 것부터 하나씩 해 보고, 막히면 다음 곳으로 넘어간다.
+  # 구글 할당량이 하루 지나 풀리면 저절로 다시 싼 쪽부터 쓴다.
+  #
+  # 그림은 구글이 싸고 빨라서 한 곳만 쓴다. 영상만 여러 곳을 돈다.
+  TRYLIST="$PROVIDER|$MODEL|$EXTRA"
+  if [ "$KIND" = "영상" ] && [ "$PROVIDER" = "google" ] && [ -n "${FAL_KEYS:-}${FAL_KEY:-}" ]; then
+    # 싼 것부터. fal 을 비싼 구글 모델보다 앞에 둔다.
+    #
+    # 왜 (실측, 2026-09-05 저녁): 구글 veo-3.1-lite 만 할당량이 차고
+    # fast 는 다시 살아났다. 그런데 fast 와 그냥 veo-3.1 은 lite 보다 비싸다.
+    # fal 을 뒤에 두면 값싼 fal 을 놔두고 비싼 구글을 계속 쓰게 된다
+    # (실제로 그렇게 돌고 있었다. fal 크레딧이 하나도 안 줄었다).
+    #
+    #   1) 구글 lite   — 제일 쌈. 할당량이 풀리면 여기서 끝난다
+    #   2) fal         — 그다음으로 싸고 요청수 제한이 사실상 없다
+    #   3) 구글 fast   — 위 둘이 다 막혔을 때만
+    #   4) 구글 veo3.1 — 마지막
+    TRYLIST="google|veo-3.1-lite-generate-preview|
+fal|minimax/h3/text-to-video|{\"duration\":5}
+google|veo-3.1-fast-generate-preview,veo-3.1-generate-preview|"
+  fi
+
+  MADE=0
+  MSG=""
+  USED="$PROVIDER"
+  while IFS='|' read -r P M X; do
+    [ -n "$P" ] || continue
+    if "$PY" "$HERE/media-gen.py" --provider "$P" --model "$M" \
+          --prompt "$PROMPT" --out "$DEST" --kind "$KIND" \
+          --steps "$STEPS" --extra "$X" \
+          --seconds "$SECS" --size "$SIZE" \
+          --aspect "$ASPECT" --resolution "$RES" 2>"$ERR"; then
+      MADE=1
+      USED="$P"          # 어디서 만들었는지 기록에 남긴다
+      rm -f "$ERR"
+      break
+    fi
     MSG="$(tail -1 "$ERR" 2>/dev/null)"
-    rm -f "$ERR" "$DEST"
+    rm -f "$ERR"
+    case "$MSG" in
+      *열쇠가\ 없어요*) break ;;   # 열쇠 문제는 다른 곳으로 가도 똑같다
+    esac
+  done <<TRYEND
+$TRYLIST
+TRYEND
+
+  if [ "$MADE" != "1" ]; then
+    rm -f "$DEST"
     case "$MSG" in
       *열쇠가\ 없어요*) echo "${MSG}" >&2; exit 6 ;;
       *) echo "${MSG:-만들지 못했어요. 잠시 뒤에 다시 해 볼까요?}" >&2; exit 5 ;;
@@ -260,9 +357,64 @@ if [ ! -s "$DEST" ]; then
   exit 5
 fi
 
+# 만든 것을 화면에 띄운다.
+#
+# 왜 도구가 직접 띄우는가 (실측 사고 2026-09-02):
+#   에이전트에게 "띄워라" 고 지시하면 명령을 잊거나 틀리게 쓴다.
+#   그러면 학생은 "완성됐어요" 글자만 보고 아무것도 안 만들어진 줄 안다.
+#   도구가 스스로 하면 그 실패가 사라진다.
+#
+# 왜 사진 앱이 아니라 브라우저인가 (실측):
+#   jpg 를 그냥 start 하면 윈도우 사진 앱이 열리는데, 그 앱은 처음 실행할 때
+#   "옵트인 알림 / OneDrive 로그인" 동의 창을 띄운다. 학생이 "거절 및 종료" 를
+#   누르면 창이 닫히고 그림을 못 본다. 63명이 각자 한 번씩 만난다.
+#   .html 은 기본 브라우저가 열고 동의 창이 없다. 발표자료를 여는 방식과 같다.
+#
+# CAMP_NO_SHOW=1 이면 띄우지 않는다 (테스트용).
+show_result() {
+  [ "${CAMP_NO_SHOW:-}" = "1" ] && return 0
+
+  # 윈도우는 cmd start, 맥은 open 이 기본 브라우저를 연다.
+  # 둘 다 없으면(리눅스 등) 조용히 넘어간다. 파일은 이미 만들어져 있다.
+  OPENER=""
+  if command -v cmd >/dev/null 2>&1; then
+    OPENER="win"
+  elif command -v open >/dev/null 2>&1; then
+    OPENER="mac"
+  else
+    return 0
+  fi
+
+  view="$TEAM_DIR/assets/_보기.html"
+  if [ "$EXT" = "mp4" ]; then
+    tag="<video src=\"$(basename "$DEST")\" controls autoplay loop></video>"
+  else
+    tag="<img src=\"$(basename "$DEST")\" alt=\"만든 것\">"
+  fi
+  {
+    printf '%s
+' '<!doctype html><meta charset="utf-8"><title>만든 것</title>'
+    printf '%s
+' '<style>html,body{margin:0;background:#0b2545;height:100%;display:grid;place-items:center}'
+    printf '%s
+' 'img,video{max-width:96vw;max-height:96vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)}</style>'
+    printf '%s
+' "$tag"
+  } > "$view" 2>/dev/null || return 0
+
+  if [ "$OPENER" = "win" ]; then
+    ( cd "$TEAM_DIR/assets" && cmd //c start "" "_보기.html" ) >/dev/null 2>&1 || true
+  else
+    open "$view" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+show_result
+
 # 성공했을 때만 기록한다. 막지는 않지만, 얼마나 썼는지는 남긴다.
 write_count "$KIND" "$(( $(read_count "$KIND") + 1 ))"
-printf '%s	%s	%s	%s
-' "$(date '+%Y-%m-%d %H:%M:%S')" "$KIND" "$CREDITS" "$REL" >> "$USAGE_FILE"
+# 어디서 만들었는지도 남긴다. 나중에 어느 쪽에 돈이 나갔는지 봐야 한다.
+printf '%s	%s	%s	%s	%s
+' "$(date '+%Y-%m-%d %H:%M:%S')" "$KIND" "$CREDITS" "${USED:-$PROVIDER}" "$REL" >> "$USAGE_FILE"
 
 printf '%s\n' "$REL"

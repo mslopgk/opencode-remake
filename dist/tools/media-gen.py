@@ -17,6 +17,7 @@ merge-slides.py 와 같은 이유다.
 """
 import argparse
 import base64
+import random
 import io
 import json
 import os
@@ -56,20 +57,71 @@ def 실패(메시지):
     sys.exit(1)
 
 
-def 요청(url, data=None, headers=None, method=None, timeout=TIMEOUT):
-    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:
-        본문 = ""
+# 다시 해 볼 만한 실패인지 본다.
+#   429 = 너무 많이 몰림, 5xx = 서버 쪽 일시 장애
+# 학생 63명이 같은 열쇠로 동시에 그림을 만들면 429 가 쏟아진다.
+# 재시도가 없으면 그 학생들은 1초 만에 "실패" 를 보고 끝난다.
+다시할코드 = (429, 500, 502, 503, 504)
+최대시도 = 5
+
+class 할당량참(Exception):
+    """이 모델의 할당량이 찼다. 다른 모델로 넘어가라는 신호."""
+    pass
+
+
+def 요청(url, data=None, headers=None, method=None, timeout=TIMEOUT, 할당량알림=False):
+    """할당량알림=True 면 429 를 만났을 때 기다리지 않고 곧바로 알린다.
+
+    영상은 모델이 여럿이라 한 모델이 막히면 다음 모델로 넘어가는 편이
+    빠르다. 그 자리에서 30초씩 기다렸다가 결국 실패하면 학생만 지친다.
+    """
+    마지막 = None
+    for 시도 in range(1, 최대시도 + 1):
+        req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
         try:
-            본문 = e.read().decode("utf-8", "replace")[:300]
-        except Exception:
-            pass
-        raise RuntimeError("서버가 거절했어요 (%s) %s" % (e.code, 본문))
-    except Exception as e:
-        raise RuntimeError("연결하지 못했어요: %s" % e)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            본문 = ""
+            try:
+                본문 = e.read().decode("utf-8", "replace")[:300]
+            except Exception:
+                pass
+            if e.code == 429 and 할당량알림:
+                raise 할당량참()
+            if e.code not in 다시할코드 or 시도 == 최대시도:
+                # 학생에게는 서버 원문(영어 JSON)을 보여주지 않는다.
+                # 기록에는 남기되, 말은 아이가 알아들을 수 있게 한다.
+                if 본문:
+                    sys.stderr.write("(기록) HTTP %s %s" % (e.code, 본문) + chr(10))
+                if e.code == 429:
+                    raise RuntimeError("친구들이 한꺼번에 만들고 있어요. 조금 뒤에 다시 해 볼까요?")
+                if e.code in (400, 401, 403):
+                    # 열쇠가 죽었거나 요청이 틀렸다. 다시 해도 결과가 같다.
+                    # "잠시 뒤에 다시" 로 숨기면 63명이 영문도 모르고 반복한다.
+                    # camp-media.sh 가 이 말을 보고 종료코드 6(열쇠 문제)을 낸다.
+                    raise RuntimeError("만들기 열쇠가 없어요. 선생님을 불러 주세요.")
+                raise RuntimeError("만들지 못했어요. 잠시 뒤에 다시 해 볼까요?")
+            # 서버가 언제 다시 오라고 알려주면 그 말을 따른다
+            쉼 = None
+            try:
+                v = e.headers.get("Retry-After") if e.headers else None
+                if v:
+                    쉼 = float(v)
+            except Exception:
+                쉼 = None
+            if 쉼 is None:
+                쉼 = min(2 ** 시도, 16)
+            # 63명이 똑같은 초에 다시 몰리지 않게 조금씩 흩는다
+            쉼 = 쉼 + random.uniform(0, 3)
+            마지막 = e
+            time.sleep(쉼)
+        except Exception as e:
+            if 시도 == 최대시도:
+                raise RuntimeError("인터넷이 잠깐 끊겼어요. 다시 해 볼까요?")
+            마지막 = e
+            time.sleep(min(2 ** 시도, 16) + random.uniform(0, 3))
+    raise RuntimeError("만들지 못했어요. 잠시 뒤에 다시 해 볼까요?")
 
 
 def cloudflare(model, prompt, out, steps):
@@ -139,11 +191,35 @@ def _url찾기(값):
     return None
 
 
+def fal열쇠들():
+    """쓸 수 있는 fal 열쇠를 모아 섞어서 돌려준다.
+
+    왜 여러 개인가 (실측, 2026-09-05 현장):
+      만드는 양은 넉넉한데 "1분에 몇 번" 이 걸린다. 학생 60명이 몰리면
+      한 열쇠로는 곧바로 막힌다. 열쇠를 여러 개 두고 매번 다른 것부터
+      쓰면 그 제한을 나눠 받는다.
+    """
+    모음 = []
+    여러개 = os.environ.get("FAL_KEYS", "")
+    for k in 여러개.split(","):
+        k = k.strip()
+        if k and k not in 모음:
+            모음.append(k)
+    하나 = os.environ.get("FAL_KEY", "").strip()
+    if 하나 and 하나 not in 모음:
+        모음.append(하나)
+    # 63명이 동시에 첫 번째 열쇠로 몰리지 않게 섞는다.
+    random.shuffle(모음)
+    return 모음
+
+
 def fal(model, prompt, out, extra):
-    열쇠 = os.environ.get("FAL_KEY", "").strip()
-    if not 열쇠:
+    열쇠목록 = fal열쇠들()
+    if not 열쇠목록:
         실패("영상 만들기 열쇠가 없어요.")
-    ascii확인(열쇠, "영상 만들기 열쇠")
+    for k in 열쇠목록:
+        ascii확인(k, "영상 만들기 열쇠")
+    열쇠 = 열쇠목록[0]
 
     머리 = {"Authorization": "Key " + 열쇠, "Content-Type": "application/json"}
 
@@ -160,16 +236,52 @@ def fal(model, prompt, out, extra):
     몸통 = json.dumps(입력).encode("utf-8")
 
     바탕 = os.environ.get("FAL_QUEUE_BASE", "https://queue.fal.run")
-    raw = 요청(바탕.rstrip("/") + "/" + model, data=몸통, headers=머리, method="POST")
+
+    # 요청수 제한(429)에 걸리면 기다리지 않고 다음 열쇠로 넘어간다.
+    # 기다렸다 같은 열쇠로 다시 하면 또 막힌다.
+    raw = None
+    막힌수 = 0
+    for i, k in enumerate(열쇠목록):
+        머리["Authorization"] = "Key " + k
+        마지막이냐 = (i == len(열쇠목록) - 1)
+        try:
+            raw = 요청(바탕.rstrip("/") + "/" + model, data=몸통,
+                      headers=머리, method="POST", 할당량알림=(not 마지막이냐))
+            if i > 0:
+                sys.stderr.write("(기록) 열쇠 %d개가 막혀서 %d번째 열쇠로 만들었어요"
+                                 % (막힌수, i + 1) + chr(10))
+            break
+        except 할당량참:
+            막힌수 += 1
+            continue
+    if raw is None:
+        실패("친구들이 한꺼번에 만들고 있어요. 조금 뒤에 다시 해 볼까요?")
+
     올린것 = json.loads(raw.decode("utf-8"))
     상태주소 = 올린것.get("status_url")
     결과주소 = 올린것.get("response_url")
     if not 상태주소 or not 결과주소:
         실패("영상 만들기를 시작하지 못했어요.")
 
-    # 영상은 오래 걸린다. 최대 20분까지 기다린다.
+    def 작업끄기():
+        """기다리기를 그만둘 때 저쪽 작업도 꺼 준다.
+
+        왜 (실측, 2026-09-05): 우리가 포기해도 fal 은 계속 만들고 요금을 매긴다.
+        학생은 실패 화면을 보는데 돈은 나가는, 제일 나쁜 조합이다.
+        게다가 그 작업이 자리를 잡고 있어서 다른 조가 뒤에서 기다리게 된다.
+        """
+        끌주소 = 올린것.get("cancel_url")
+        if not 끌주소:
+            return
+        try:
+            요청(끌주소, headers=머리, method="PUT", timeout=15)
+        except Exception:
+            pass
+
+    # 5초짜리 영상은 40초쯤이면 나온다(실측). 8분이 지나도 안 나오면
+    # 무언가 잘못된 것이다. 20분씩 기다리면 학생이 그 앞에서 굳는다.
     간격 = float(os.environ.get("CAMP_MEDIA_POLL_SEC", "5"))
-    마감 = time.time() + 20 * 60
+    마감 = time.time() + float(os.environ.get("CAMP_MEDIA_MAX_WAIT_SEC", "480"))
     while time.time() < 마감:
         time.sleep(간격)
         상태 = json.loads(요청(상태주소, headers=머리).decode("utf-8"))
@@ -179,7 +291,8 @@ def fal(model, prompt, out, extra):
         if s in ("FAILED", "CANCELLED", "ERROR"):
             실패("영상을 만들지 못했어요.")
     else:
-        실패("영상 만들기가 너무 오래 걸려요.")
+        작업끄기()
+        실패("영상 만들기가 너무 오래 걸려요. 다시 해 볼까요?")
 
     결과 = json.loads(요청(결과주소, headers=머리).decode("utf-8"))
     주소 = _url찾기(결과)
@@ -258,7 +371,17 @@ def _그림찾기(값):
 
 
 def google_video(model, prompt, out, seconds, resolution, aspect):
-    """Veo 영상 생성. 작업을 걸고 끝날 때까지 기다린 뒤 내려받는다."""
+    """Veo 영상 생성. 작업을 걸고 끝날 때까지 기다린 뒤 내려받는다.
+
+    model 에 쉼표로 여러 개를 주면 앞에서부터 시도한다.
+
+    왜 그렇게 하나 (실측, 2026-09-05 현장):
+      할당량은 모델마다 따로 센다. 학생 60명이 몰리자 제일 싼
+      veo-3.1-lite 만 429(RESOURCE_EXHAUSTED) 로 막혔는데, 같은 열쇠로
+      veo-3.1-fast 와 veo-3.1 은 그 순간에도 멀쩡히 작업을 받았다.
+      그래서 싼 것부터 걸어 보고, 막히면 다음 것으로 넘어간다.
+      학생은 아무것도 눈치채지 못한다.
+    """
     열쇠 = os.environ.get("GEMINI_API_KEY", "").strip()
     if not 열쇠:
         실패("영상 만들기 열쇠가 없어요.")
@@ -269,14 +392,34 @@ def google_video(model, prompt, out, seconds, resolution, aspect):
     몸통 = json.dumps({
         "instances": [{"prompt": prompt}],
         "parameters": {
-            "durationSeconds": str(seconds),
+            "durationSeconds": int(seconds),   # 문자열로 주면 400 (실측 2026-09-05)
             "resolution": resolution,
             "aspectRatio": aspect,
         },
     }).encode("utf-8")
 
-    raw = 요청("%s/v1beta/models/%s:predictLongRunning" % (바탕, model),
-              data=몸통, headers=머리, method="POST")
+    후보 = [m.strip() for m in str(model).split(",") if m.strip()]
+    if not 후보:
+        실패("영상 모델이 정해지지 않았어요.")
+
+    raw = None
+    막힌것 = []
+    for i, m in enumerate(후보):
+        마지막이냐 = (i == len(후보) - 1)
+        try:
+            raw = 요청("%s/v1beta/models/%s:predictLongRunning" % (바탕, m),
+                      data=몸통, headers=머리, method="POST",
+                      할당량알림=(not 마지막이냐))
+            if i > 0:
+                sys.stderr.write("(기록) %s 이(가) 막혀서 %s 로 만들었어요"
+                                 % (",".join(막힌것), m) + chr(10))
+            break
+        except 할당량참:
+            막힌것.append(m)     # 이 모델만 할당량이 찼다. 다음 것으로.
+            continue
+    if raw is None:
+        실패("친구들이 한꺼번에 만들고 있어요. 조금 뒤에 다시 해 볼까요?")
+
     올린것 = json.loads(raw.decode("utf-8"))
     작업 = 올린것.get("name")
     if not 작업:
@@ -335,8 +478,12 @@ def main():
             fal(a.model, a.prompt, a.out, a.extra)
         else:
             실패("모르는 제공자예요: %s" % a.provider)
-    except RuntimeError as e:
-        실패(str(e))
+    # RuntimeError 만 잡으면 JSONDecodeError 같은 것이 트레이스백으로
+    # 학생 화면에 그대로 간다(학교 프록시가 HTML 을 돌려줄 때 실제로 남).
+    except Exception as e:
+        # 영어 오류와 파일 경로를 학생에게 보이면 안 된다. 기록에만 남긴다.
+        sys.stderr.write("(기록) %s: %s" % (type(e).__name__, e) + chr(10))
+        실패("만들지 못했어요. 잠시 뒤에 다시 해 볼까요?")
     except KeyboardInterrupt:
         실패("멈췄어요.")
 

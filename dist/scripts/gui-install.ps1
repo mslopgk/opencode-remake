@@ -78,6 +78,7 @@ function Show-CampInstaller([string]$DistDir) {
         . "$($Shared.ScriptDir)\lib-appstate.ps1"
         . "$($Shared.ScriptDir)\lib-team.ps1"
         . "$($Shared.ScriptDir)\selfcheck.ps1"
+        . "$($Shared.ScriptDir)\lib-shellfix.ps1"
         . "$($Shared.ScriptDir)\orchestrator.ps1"
 
         $q = $Shared.Queue
@@ -149,7 +150,7 @@ function Show-CampInstaller([string]$DistDir) {
             }
             else {
                 $heading.Text = '조금 더 손이 필요해요'
-                $subText.Text = '선생님을 불러 주세요. 기록 파일을 보여 드리면 됩니다.'
+                $subText.Text = '여기서 그만해도 괜찮아요. 캠프 첫날 아침에 5분이면 고쳐 드려요.'
                 $status.Text = '기록 파일: ' + (Join-Path $env:USERPROFILE '창의디자인캠프\설치기록.txt')
                 $bar.Foreground = $t2.Bad
             }

@@ -29,13 +29,14 @@ function Get-ExeTargets {
         @{
             Exe   = '창의디자인캠프 설치.exe'
             Title = '창의디자인캠프 설치'
-            Load  = 'lib-log.ps1,lib-gui.ps1,lib-appstate.ps1,lib-team.ps1,selfcheck.ps1,orchestrator.ps1,gui-install.ps1'
+            Admin = $true
+            Load  = 'lib-log.ps1,lib-gui.ps1,lib-appstate.ps1,lib-team.ps1,lib-shellfix.ps1,selfcheck.ps1,orchestrator.ps1,gui-install.ps1'
             Call  = 'Show-CampInstaller -DistDir $root'
         },
         @{
             Exe   = '캠프 시작.exe'
             Title = '창의디자인캠프 시작'
-            Load  = 'lib-log.ps1,lib-gui.ps1,lib-appstate.ps1,lib-team.ps1,launcher.ps1,gui-launcher.ps1'
+            Load  = 'lib-log.ps1,lib-gui.ps1,lib-appstate.ps1,lib-team.ps1,lib-uia.ps1,launcher.ps1,gui-launcher.ps1'
             Call  = 'Show-CampLauncher -TemplateDir (Join-Path $root ''template'')'
         },
         @{
@@ -99,10 +100,21 @@ static class Program {
         psi.UseShellExecute = false;
         psi.CreateNoWindow = true;
         psi.WorkingDirectory = exeDir;
+        // 오류가 나도 창이 없어 학생은 아무 화면도 못 본다(실측 사고, 2026-09-05).
+        // 그래서 오류 내용을 받아둔다.
+        psi.RedirectStandardError = true;
 
         try {
             using (var p = Process.Start(psi)) {
+                string err = p.StandardError.ReadToEnd();
                 p.WaitForExit();
+                if (p.ExitCode != 0 && !string.IsNullOrEmpty(err) && err.Trim().Length > 0) {
+                    string t = err.Trim();
+                    if (t.Length > 700) { t = t.Substring(0, 700) + "..."; }
+                    MessageBox.Show(
+                        "도구가 중간에 멈췄어요. 선생님을 불러 주세요.\n\n" + t,
+                        "__TITLE__", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
                 return p.ExitCode;
             }
         }
@@ -134,10 +146,20 @@ static class Program {
             '/target:winexe',
             '/optimize+',
             ('/win32icon:"' + $icon + '"'),
-            '/reference:System.Windows.Forms.dll',
-            ('/out:"' + $outExe + '"'),
-            ('"' + $csFile + '"')
+            '/reference:System.Windows.Forms.dll'
         )
+        # 설치는 관리자 권한이 필요하다. 나머지(시작·점검·발표자료)는
+        # 학생 권한으로 충분하다. 필요 없는 곳에 UAC 를 띄우면 학생이 멈춘다.
+        if ($Target.ContainsKey('Admin') -and $Target.Admin) {
+            $manifest = Join-Path $distDir 'scripts\camp-admin.manifest'
+            if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+                Write-Host '권한 설정 파일(camp-admin.manifest)이 없습니다.'
+                return $false
+            }
+            $args += ('/win32manifest:"' + $manifest + '"')
+        }
+        $args += ('/out:"' + $outExe + '"')
+        $args += ('"' + $csFile + '"')
         $p = Start-Process -FilePath $Csc -ArgumentList $args -PassThru -Wait -WindowStyle Hidden `
                 -RedirectStandardOutput (Join-Path $tmp 'out.txt') `
                 -RedirectStandardError  (Join-Path $tmp 'err.txt')

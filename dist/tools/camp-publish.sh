@@ -21,7 +21,7 @@ TEAM_DIR=""; CHECK_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --team-dir) TEAM_DIR="${2:-}"; shift 2 ;;
+    --team-dir) [ $# -ge 2 ] || { echo "값이 빠졌어요." >&2; exit 4; }; TEAM_DIR="$2"; shift 2 ;;
     --check)    CHECK_ONLY=1; shift ;;
     *) echo "알 수 없는 옵션이에요: $1" >&2; exit 4 ;;
   esac

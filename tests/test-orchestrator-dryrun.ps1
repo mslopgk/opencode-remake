@@ -15,6 +15,9 @@ New-Item -ItemType Directory -Path (Join-Path $dist 'preset') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $dist 'secrets') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $dist 'template') -Force | Out-Null
 $env:CAMP_APPSTATE_DIR = Join-Path $tmp 'appstate'
+# 이 시험은 설치 흐름을 보는 것이다. 개발 PC 의 남은 공간 때문에
+# 흐름 검사가 실패하면 안 된다. 공간 검사 자체는 아래에서 따로 본다.
+$env:CAMP_MIN_FREE_GB = '0.01'
 try {
     # 번들 파일을 가짜로 만들어 둔다
     $files = @('opencode-desktop-win-x64.exe','opencode-windows-x64.zip','node-lts-x64.msi','python-3.12-amd64.exe','Git-64-bit.exe','CascadiaCode-NF.zip')

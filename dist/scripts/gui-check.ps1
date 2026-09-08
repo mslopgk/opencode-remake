@@ -85,6 +85,10 @@ function Show-CampChecker {
                 if ($msg -like ('*' + $m.Key + '*')) {
                     if ($lvl -eq 'ok')      { Set-CampStepState -Row $rows[$m.Step] -State 'done' }
                     elseif ($lvl -eq 'fail') { Set-CampStepState -Row $rows[$m.Step] -State 'fail' }
+                    # 오프라인 판은 인터넷 항목을 "나중에" 로 넘긴다(level=note).
+                    # 그걸 running 으로 두면 "다 좋아요!" 인데 두 줄이 계속 돌아간다.
+                    # 학생은 아직 확인 중인 줄 알고 기다린다.
+                    elseif ($lvl -eq 'note') { Set-CampStepState -Row $rows[$m.Step] -State 'skip' }
                     else                     { Set-CampStepState -Row $rows[$m.Step] -State 'running' }
                     break
                 }
@@ -100,7 +104,7 @@ function Show-CampChecker {
             }
             else {
                 $heading.Text = '안 되는 게 있어요'
-                $subText.Text = '선생님을 불러 주세요.'
+                $subText.Text = '"창의디자인캠프 설치" 를 한 번 더 눌러 보세요. 그래도 안 되면 그냥 캠프 날 오세요.'
             }
             $closeBtn.Visibility = 'Visible'
         }
